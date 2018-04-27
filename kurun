@@ -18,4 +18,4 @@ EOF
 
 docker build -t kurun /tmp/kurun
 
-kubectl run kurun -it --image kurun --quiet --image-pull-policy=IfNotPresent --restart=Never --rm --command -- sh -c "sleep 0.1 && /main $arguments"
+kubectl run kurun -it --image kurun --quiet --image-pull-policy=IfNotPresent --restart=Never --rm --command -- sh -c "sleep 1 && /main $arguments"
