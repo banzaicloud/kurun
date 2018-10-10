@@ -80,7 +80,7 @@ git clone git@github.com:banzaicloud/kurun.git
 cd kurun
 # Download the dependencies, this is just a one-time step to get the k8s libraries
 go get ./...
-./kurun test.go
+./kurun example/test.go
 Sending build context to Docker daemon  31.05MB
 Step 1/2 : FROM alpine
  ---> 3fd9065eaf02
