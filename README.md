@@ -36,7 +36,7 @@ It's that easy.
 
 To see how you can leverage `kurun` let’s try checking it out with a small example which lists all nodes in your Kubernetes cluster:
 
-```
+```go
 package main
 
 import (
@@ -75,7 +75,7 @@ func main() {
 
 Execute the following commands in the CLI, make sure your `kubectl` points to the cluster you would like to use:
 
-```
+```bash
 git clone git@github.com:banzaicloud/kurun.git
 cd kurun
 # Download the dependencies, this is just a one-time step to get the k8s libraries
