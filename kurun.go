@@ -40,7 +40,7 @@ var rootCmd = &cobra.Command{
 		goBuildCommand.Stderr = os.Stderr
 		goBuildCommand.Stdout = os.Stdout
 		env := os.Environ()
-		env = append(env, "GOOS=linux")
+		env = append(env, "GOOS=linux", "CGO_ENABLED=0")
 		goBuildCommand.Env = env
 
 		if err := goBuildCommand.Start(); err != nil {
