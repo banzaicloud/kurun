@@ -87,6 +87,7 @@ var rootCmd = &cobra.Command{
 			"--image-pull-policy=IfNotPresent",
 			"--restart=Never",
 			"--rm",
+			"--limits==cpu=100m,memory=128Mi",
 		}
 		if serviceAccount != "" {
 			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--serviceaccount=%s", serviceAccount))
