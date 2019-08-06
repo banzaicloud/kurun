@@ -4,17 +4,34 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var serviceAccount string
+var servicePort int
+var serviceName string
 var podEnv []string
 var namespace string
 
-var rootCmd = &cobra.Command{
-	Use:   "kurun [flags] -- gofiles... [arguments...]",
+func runKubectl(args []string) error {
+	if namespace != "" {
+		args = append(args, fmt.Sprintf("--namespace=%s", namespace))
+	}
+
+	cmd := exec.Command("kubectl", args...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	return cmd.Run()
+}
+
+var runCmd = &cobra.Command{
+	Use:   "run [flags] -- gofiles... [arguments...]",
 	Short: "Just like `go run main.go` but executed inside Kubernetes with one command.",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -124,10 +141,141 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+var exposeCmd = &cobra.Command{
+	Use:   "port-forward [flags] upstream",
+	Short: "Just like `kubectl port-forward ...`, just the other way around!",
+	Args:  cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		done := make(chan bool, 1)
+
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+		go func() {
+			<-signals
+			fmt.Println("\rCtrl+C pressed, exiting")
+
+			kubectlArgs := []string{
+				"delete",
+				"deployment",
+				serviceName,
+			}
+
+			if err := runKubectl(kubectlArgs); err != nil {
+				fmt.Println("failed to delete deployment", err.Error())
+			}
+
+			/////
+
+			kubectlArgs = []string{
+				"delete",
+				"service",
+				serviceName,
+			}
+
+			if err := runKubectl(kubectlArgs); err != nil {
+				fmt.Println("failed to delete service", err.Error())
+			}
+
+			done <- true
+		}()
+
+		kubectlArgs := []string{
+			"run", serviceName,
+			"--image=alexellis2/inlets:2.20",
+			"--limits=cpu=100m,memory=128Mi",
+			"--port=8000",
+			"--command", "inlets", "server",
+		}
+
+		if err := runKubectl(kubectlArgs); err != nil {
+			return err
+		}
+
+		//////
+
+		kubectlArgs = []string{
+			"wait",
+			"--for=condition=available",
+			"deployment/" + serviceName,
+			"--timeout=60s",
+		}
+
+		if err := runKubectl(kubectlArgs); err != nil {
+			return err
+		}
+
+		//////
+
+		kubectlArgs = []string{
+			"expose",
+			"deployment",
+			serviceName,
+			"--port=" + fmt.Sprint(servicePort),
+			"--target-port=8000",
+		}
+
+		if err := runKubectl(kubectlArgs); err != nil {
+			return err
+		}
+
+		////////
+
+		kubectlArgs = []string{
+			"port-forward",
+			"service/" + serviceName,
+			"8000:" + fmt.Sprint(servicePort),
+		}
+
+		if namespace != "" {
+			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--namespace=%s", namespace))
+		}
+
+		kubectlCommand := exec.Command("kubectl", kubectlArgs...)
+		kubectlCommand.Stdin = os.Stdin
+		kubectlCommand.Stderr = os.Stderr
+		kubectlCommand.Stdout = os.Stdout
+
+		if err := kubectlCommand.Start(); err != nil {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return err
+		}
+
+		fmt.Println("Waiting for kubeclt port-forward to build up the connection")
+		time.Sleep(2 * time.Second)
+
+		/////
+
+		upstream := args[0]
+
+		inletsCommand := exec.Command("inlets", "client", "--upstream", upstream)
+		inletsCommand.Stderr = os.Stderr
+		inletsCommand.Stdout = os.Stdout
+
+		if err := inletsCommand.Start(); err != nil {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return err
+		}
+
+		<-done
+
+		return nil
+	},
+}
+
 func main() {
-	rootCmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
-	rootCmd.PersistentFlags().StringArrayVar(&podEnv, "env", []string{}, "Environment variables to pass to the pod's containers")
-	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "Namespace to use for the pod")
+	runCmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
+	runCmd.PersistentFlags().StringArrayVar(&podEnv, "env", []string{}, "Environment variables to pass to the pod's containers")
+
+	exposeCmd.PersistentFlags().IntVar(&servicePort, "serviceport", 80, "Service port to set for the service")
+	exposeCmd.PersistentFlags().StringVar(&serviceName, "servicename", "kurun", "Service name to set for the service")
+
+	rootCmd := &cobra.Command{Use: "kurun"}
+	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "Namespace to use for the Pod/Service")
+	rootCmd.AddCommand(runCmd, exposeCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(2)
 	}
