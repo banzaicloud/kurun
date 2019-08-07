@@ -123,15 +123,20 @@ List of Kubernetes nodes:
 `kurun` is capable of port forwarding your local application into a Kubernetes cluster with the help of a few tricks, it uses [inlets](https://github.com/alexellis/inlets) and `kubectl port-forward` to achieve this. This is extremely useful for rapid development of Kubernetes admission webhooks for example.
 
 Start a Python SimpleHTTPServer on port 4443 on your machine:
+
 ```bash
 $ python -m SimpleHTTPServer 4443
 ```
 
 In another terminal session proxy this application into Kubernetes under the Service name `python-server`:
-`kurun port-forward --servicename python-server localhost:4443`
+
+```bash
+kurun port-forward --servicename python-server localhost:4443
+```
 
 In a third terminal session proxy this application into Kubernetes under the Service name `python-server`:
-```
+
+```bash
 kubectl run alpine --rm --image alpine -it
 If you don't see a command prompt, try pressing enter.
 
