@@ -142,9 +142,10 @@ var runCmd = &cobra.Command{
 }
 
 var exposeCmd = &cobra.Command{
-	Use:   "port-forward [flags] upstream",
-	Short: "Just like `kubectl port-forward ...`, just the other way around!",
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "port-forward [flags] upstream",
+	Short:   "Just like `kubectl port-forward ...`, just the other way around!",
+	Example: "kurun port-forward --namespace apps localhost:4443",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		done := make(chan bool, 1)
