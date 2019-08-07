@@ -31,15 +31,19 @@ Use "kurun [command] --help" for more information about a command.
 
 ### Installation
 
-#### Bash version
+#### Brew version
 ```bash
-curl https://raw.githubusercontent.com/banzaicloud/kurun/master/kurun > /usr/local/bin/kurun && chmod +x /usr/local/bin/kurun
+brew install banzaicloud/tap/kurun
 ```
 
 #### Go version
 ```bash
 go get github.com/banzaicloud/kurun
 ```
+
+#### Binaries under releases
+
+https://github.com/banzaicloud/kurun/releases
 
 ### Usage
 
