@@ -118,7 +118,7 @@ List of Kubernetes nodes:
 - docker-for-desktop - map[beta.kubernetes.io/arch:amd64 beta.kubernetes.io/os:linux kubernetes.io/hostname:docker-for-desktop node-role.kubernetes.io/master:]
 ```
 
-### `kurun` is like `kubectl port-forward` to Kubernetes (and not out!)
+### `kurun` is like `kubectl port-forward` into Kubernetes (and not out from!)
 
 `kurun` is capable of port forwarding your local application into a Kubernetes cluster with the help of a few tricks, it uses [inlets](https://github.com/alexellis/inlets) and `kubectl port-forward` to achieve this. This is extremely useful for rapid development of Kubernetes admission webhooks for example.
 
