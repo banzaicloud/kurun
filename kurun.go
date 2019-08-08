@@ -17,6 +17,7 @@ var servicePort int
 var serviceName string
 var podEnv []string
 var namespace string
+var labels []string
 
 func runKubectl(args []string) error {
 	if namespace != "" {
@@ -187,6 +188,7 @@ var exposeCmd = &cobra.Command{
 			"--image=alexellis2/inlets:2.20",
 			"--limits=cpu=100m,memory=128Mi",
 			"--port=8000",
+			"--labels=" + strings.Join(labels, ","),
 			"--command", "inlets", "server",
 		}
 
@@ -269,10 +271,11 @@ var exposeCmd = &cobra.Command{
 
 func main() {
 	runCmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
-	runCmd.PersistentFlags().StringArrayVar(&podEnv, "env", []string{}, "Environment variables to pass to the pod's containers")
+	runCmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", []string{}, "Environment variables to pass to the pod's containers")
 
 	exposeCmd.PersistentFlags().IntVar(&servicePort, "serviceport", 80, "Service port to set for the service")
 	exposeCmd.PersistentFlags().StringVar(&serviceName, "servicename", "kurun", "Service name to set for the service")
+	exposeCmd.PersistentFlags().StringSliceVarP(&labels, "label", "l", []string{}, "Pod labels to add")
 
 	rootCmd := &cobra.Command{Use: "kurun"}
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "Namespace to use for the Pod/Service")
