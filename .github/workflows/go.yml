@@ -17,8 +17,9 @@ jobs:
       uses: actions/checkout@master
 
     - name: Get dependencies
-      run: |
-        go get -v -t -d ./...
+      run: go mod download
+      env:
+        GOPROXY: https://proxy.golang.org
 
     - name: Build
       run: go build -v .
