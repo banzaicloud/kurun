@@ -16,6 +16,9 @@ archives:
         id: bin
         name_template: "kurun-{{ .Os }}-{{ .Arch }}"
         format: binary
+    -
+        id: targz
+        name_template: "kurun-{{ .Os }}-{{ .Arch }}"
 
 checksum:
     name_template: "kurun_checksums.txt"
