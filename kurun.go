@@ -74,10 +74,7 @@ func isKindCluster() (bool, error) {
 	kubectlConfigCommand.Stderr = os.Stderr
 	kubectlConfigCommand.Stdout = buffer
 
-	if err := kubectlConfigCommand.Start(); err != nil {
-		return false, err
-	}
-	if err := kubectlConfigCommand.Wait(); err != nil {
+	if err := kubectlConfigCommand.Run(); err != nil {
 		return false, err
 	}
 
@@ -116,12 +113,7 @@ var runCmd = &cobra.Command{
 		env = append(env, "GOOS=linux", "CGO_ENABLED=0")
 		goBuildCommand.Env = env
 
-		if err := goBuildCommand.Start(); err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
-			return err
-		}
-		if err := goBuildCommand.Wait(); err != nil {
+		if err := goBuildCommand.Run(); err != nil {
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
 			return err
@@ -141,12 +133,7 @@ var runCmd = &cobra.Command{
 		dockerBuildCommand.Stderr = os.Stderr
 		dockerBuildCommand.Stdout = os.Stdout
 
-		if err := dockerBuildCommand.Start(); err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
-			return err
-		}
-		if err := dockerBuildCommand.Wait(); err != nil {
+		if err := dockerBuildCommand.Run(); err != nil {
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
 			return err
@@ -164,12 +151,7 @@ var runCmd = &cobra.Command{
 			kindLoadCommand.Stderr = os.Stderr
 			kindLoadCommand.Stdout = os.Stdout
 
-			if err := kindLoadCommand.Start(); err != nil {
-				cmd.SilenceUsage = true
-				cmd.SilenceErrors = true
-				return err
-			}
-			if err := kindLoadCommand.Wait(); err != nil {
+			if err := kindLoadCommand.Run(); err != nil {
 				cmd.SilenceUsage = true
 				cmd.SilenceErrors = true
 				return err
@@ -206,12 +188,7 @@ var runCmd = &cobra.Command{
 		kubectlCommand.Stderr = os.Stderr
 		kubectlCommand.Stdout = os.Stdout
 
-		if err := kubectlCommand.Start(); err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
-			return err
-		}
-		if err := kubectlCommand.Wait(); err != nil {
+		if err := kubectlCommand.Run(); err != nil {
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
 			return err
