@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+const imageTag = "kurun"
 
 var serviceAccount string
 var servicePort int
@@ -60,6 +63,27 @@ func runKubectl(args []string) error {
 	cmd.Stdout = os.Stdout
 
 	return cmd.Run()
+}
+
+// Detect if the cluster is a KinD cluster, because in case of that
+// we need to load the Docker images into the cluster.
+func isKindCluster() (bool, error) {
+	buffer := bytes.NewBuffer(nil)
+
+	kubectlConfigCommand := exec.Command("kubectl", "config", "current-context")
+	kubectlConfigCommand.Stderr = os.Stderr
+	kubectlConfigCommand.Stdout = buffer
+
+	if err := kubectlConfigCommand.Start(); err != nil {
+		return false, err
+	}
+	if err := kubectlConfigCommand.Wait(); err != nil {
+		return false, err
+	}
+
+	kubeContext := strings.TrimSuffix(buffer.String(), "\n")
+
+	return kubeContext == "kubernetes-admin@kind" || kubeContext == "kind-kind", nil
 }
 
 var runCmd = &cobra.Command{
@@ -113,7 +137,7 @@ var runCmd = &cobra.Command{
 
 		fmt.Fprintf(file, "FROM alpine\nADD main /\n")
 
-		dockerBuildCommand := exec.Command("docker", "build", "-t", "kurun", "/tmp/kurun")
+		dockerBuildCommand := exec.Command("docker", "build", "-t", imageTag, "/tmp/kurun")
 		dockerBuildCommand.Stderr = os.Stderr
 		dockerBuildCommand.Stdout = os.Stdout
 
@@ -128,10 +152,34 @@ var runCmd = &cobra.Command{
 			return err
 		}
 
+		kindCluster, err := isKindCluster()
+		if err != nil {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return err
+		}
+
+		if kindCluster {
+			kindLoadCommand := exec.Command("kind", "load", "docker-image", imageTag)
+			kindLoadCommand.Stderr = os.Stderr
+			kindLoadCommand.Stdout = os.Stdout
+
+			if err := kindLoadCommand.Start(); err != nil {
+				cmd.SilenceUsage = true
+				cmd.SilenceErrors = true
+				return err
+			}
+			if err := kindLoadCommand.Wait(); err != nil {
+				cmd.SilenceUsage = true
+				cmd.SilenceErrors = true
+				return err
+			}
+		}
+
 		kubectlArgs := []string{
-			"run", "kurun",
+			"run", imageTag,
 			"-it",
-			"--image=kurun",
+			"--image=" + imageTag,
 			"--quiet",
 			"--image-pull-policy=IfNotPresent",
 			"--restart=Never",
