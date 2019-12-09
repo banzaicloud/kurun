@@ -11,9 +11,11 @@ builds:
         goarch:
             - amd64
 
-archive:
-    name_template: "kurun-{{ .Os }}-{{ .Arch }}"
-    format: binary
+archives:
+    -
+        id: bin
+        name_template: "kurun-{{ .Os }}-{{ .Arch }}"
+        format: binary
 
 checksum:
     name_template: "kurun_checksums.txt"
@@ -21,14 +23,15 @@ checksum:
 changelog:
     skip: true
 
-brew:
-    github:
-        owner: banzaicloud
-        name: homebrew-tap
-    folder: Formula
-    homepage: https://banzaicloud.com/blog/kurun
-    description: Run main.go in Kubernetes with one command
-    test: |
-        system "#{bin}/kurun --version"
-    dependencies:
-        - inlets
+brews:
+    -
+        github:
+            owner: banzaicloud
+            name: homebrew-tap
+        folder: Formula
+        homepage: https://banzaicloud.com/blog/kurun
+        description: Run main.go in Kubernetes with one command
+        test: |
+            system "#{bin}/kurun --version"
+        dependencies:
+            - inlets
