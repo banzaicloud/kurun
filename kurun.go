@@ -335,7 +335,7 @@ var portForwardCmd = &cobra.Command{
 
 			containers = append(containers, corev1.Container{
 				Name:  "ghostunnel",
-				Image: "squareup/ghostunnel:v1.5.0-rc.2",
+				Image: "squareup/ghostunnel:v1.5.2",
 				Args: []string{
 					"server",
 					"--target",
