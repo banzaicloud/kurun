@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -206,6 +208,14 @@ var portForwardCmd = &cobra.Command{
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
+		tokenBytes := make([]byte, 16)
+		_, err := rand.New(rand.NewSource(time.Now().UnixNano())).Read(tokenBytes)
+		if err != nil {
+			return err
+		}
+
+		token := base64.RawStdEncoding.EncodeToString(tokenBytes)
+
 		deploymentName := serviceName
 		if deploymentName != "kurun" {
 			deploymentName += "-kurun"
@@ -286,7 +296,7 @@ var portForwardCmd = &cobra.Command{
 		ports := []corev1.ContainerPort{
 			{
 				Name:          "inlets",
-				ContainerPort: 8000,
+				ContainerPort: 8444,
 			},
 		}
 
@@ -313,8 +323,8 @@ var portForwardCmd = &cobra.Command{
 		containers := []corev1.Container{
 			{
 				Name:    "inlets-server",
-				Image:   "alexellis2/inlets:2.4.1",
-				Command: []string{"inlets", "server", "-p", fmt.Sprint(inletsPort)},
+				Image:   "inlets/inlets:2.7.0",
+				Command: []string{"inlets", "server", "-p", fmt.Sprint(inletsPort), "--token", token},
 				Ports:   ports,
 			},
 		}
@@ -417,7 +427,7 @@ var portForwardCmd = &cobra.Command{
 		kubectlArgs = []string{
 			"port-forward",
 			"deployment/" + deploymentName,
-			"8000:" + fmt.Sprint(inletsPort),
+			"8444:" + fmt.Sprint(inletsPort),
 		}
 
 		if namespace != "" {
@@ -442,7 +452,7 @@ var portForwardCmd = &cobra.Command{
 
 		upstream := args[0]
 
-		inletsCommand := exec.Command("inlets", "client", "--upstream", upstream)
+		inletsCommand := exec.Command("inlets", "client", "--upstream", upstream, "--remote", "127.0.0.1:8444", "--token", token)
 		inletsCommand.Stderr = os.Stderr
 		inletsCommand.Stdout = os.Stdout
 
