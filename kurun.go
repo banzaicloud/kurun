@@ -414,7 +414,7 @@ var portForwardCmd = &cobra.Command{
 				deploymentName,
 				"--name=" + serviceName,
 				"--port=" + fmt.Sprint(servicePort),
-				"--target-port=8000",
+				"--target-port=8444",
 			}
 
 			if err := runKubectl(kubectlArgs); err != nil {
