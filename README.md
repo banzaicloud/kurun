@@ -57,7 +57,7 @@ kurun port-forward localhost:4443
 
 ### `kurun` is like `go run` to Kubernetes
 
-The `go run` command is a really convenient CLI subcommand for executing `Golang` code during the development phase. A lot of our applications are making calls to the Kubernetes API and we needed a quick utility to execute the **Go code inside Kubernetes** very quickly. That's why we have written `kurun`, a dirty little bash utility, to execute Go code inside Kubernetes with a oneliner: 
+The `go run` command is a convenient CLI subcommand for executing `Golang` code during the development phase. A lot of our applications are making calls to the Kubernetes API and we needed a quick utility to execute the **Go code inside Kubernetes** very quickly. That's why we have written `kurun`, a dirty little bash utility, to execute Go code inside Kubernetes with a oneliner: 
 
 `kurun run main.go` 
 
@@ -179,5 +179,19 @@ OK: 7 MiB in 18 packages
 </html>
 ```
 
+Also, it is possible to proxy HTTPS services from localhost (just add the `https://` scheme prefix to the URL):
+
+```bash
+kurun port-forward --servicename pipeline https://localhost:9090
+```
+
+The above will end up as a plaintext service inside Kubernetes.
+
+If you need TLS there as well you have to provide the TLS type Kubernetes Secret name to `kurun`:
+
+```bash
+kubectl create secret tls pipeline-cert --cert "tls.crt" --key "tls.key"
+kurun port-forward --servicename pipeline https://localhost:9090 --tlssecret pipeline-cert
+```
 
 For some more details and examples please read this [post](https://banzaicloud.com/blog/kurun).
