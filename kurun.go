@@ -57,9 +57,7 @@ func getKubeConfig() (*rest.Config, error) {
 }
 
 func runKubectl(args []string) error {
-	if namespace != "" {
-		args = append(args, fmt.Sprintf("--namespace=%s", namespace))
-	}
+	args = append(args, fmt.Sprintf("--namespace=%s", namespace))
 
 	cmd := exec.Command("kubectl", args...)
 	cmd.Stderr = os.Stderr
@@ -171,6 +169,7 @@ var runCmd = &cobra.Command{
 			"--rm",
 			"--limits=cpu=100m,memory=128Mi",
 		}
+
 		if serviceAccount != "" {
 			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--serviceaccount=%s", serviceAccount))
 		}
@@ -181,11 +180,7 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if namespace != "" {
-			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--namespace=%s", namespace))
-		}
-
-		kubectlArgs = append(kubectlArgs, "--command", "--", "sh", "-c", fmt.Sprintf("sleep 1 && /main %s", strings.Join(finalArguments[:], " ")))
+		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--namespace=%s", namespace), "--command", "--", "sh", "-c", fmt.Sprintf("sleep 1 && /main %s", strings.Join(finalArguments[:], " ")))
 		kubectlCommand := exec.Command("kubectl", kubectlArgs...)
 		kubectlCommand.Stdin = os.Stdin
 		kubectlCommand.Stderr = os.Stderr
@@ -428,10 +423,7 @@ var portForwardCmd = &cobra.Command{
 			"port-forward",
 			"deployment/" + deploymentName,
 			"8444:" + fmt.Sprint(inletsPort),
-		}
-
-		if namespace != "" {
-			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--namespace=%s", namespace))
+			fmt.Sprintf("--namespace=%s", namespace),
 		}
 
 		kubectlCommand := exec.Command("kubectl", kubectlArgs...)
@@ -478,7 +470,7 @@ func main() {
 	portForwardCmd.PersistentFlags().StringVar(&tlsSecret, "tlssecret", "", "Use the certs for ghostunnel")
 
 	rootCmd := &cobra.Command{Use: "kurun"}
-	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "Namespace to use for the Pod/Service")
+	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Namespace to use for the Pod/Service")
 	rootCmd.AddCommand(runCmd, portForwardCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(2)
