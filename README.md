@@ -179,7 +179,7 @@ OK: 7 MiB in 18 packages
 </html>
 ```
 
-Also, it is possible to proxy HTTPS services from localhost (just add the `https://` scheme prefix to the URL):
+It's also possible to proxy HTTPS services from localhost (just add the `https://` scheme prefix to the URL):
 
 ```bash
 kurun port-forward --servicename pipeline https://localhost:9090
