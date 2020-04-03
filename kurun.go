@@ -35,6 +35,7 @@ var tlsSecret string
 var podEnv []string
 var namespace string
 var labels []string
+var localPort int
 
 func getKubeConfig() (*rest.Config, error) {
 	// If an env variable is specified with the config locaiton, use that
@@ -422,7 +423,7 @@ var portForwardCmd = &cobra.Command{
 		kubectlArgs = []string{
 			"port-forward",
 			"deployment/" + deploymentName,
-			"8444:" + fmt.Sprint(inletsPort),
+			fmt.Sprint(localPort) + ":" + fmt.Sprint(inletsPort),
 			fmt.Sprintf("--namespace=%s", namespace),
 		}
 
@@ -444,7 +445,7 @@ var portForwardCmd = &cobra.Command{
 
 		upstream := args[0]
 
-		inletsCommand := exec.Command("inlets", "client", "--upstream", upstream, "--remote", "127.0.0.1:8444", "--token", token)
+		inletsCommand := exec.Command("inlets", "client", "--upstream", upstream, "--remote", "127.0.0.1:"+fmt.Sprint(localPort), "--token", token)
 		inletsCommand.Stderr = os.Stderr
 		inletsCommand.Stdout = os.Stdout
 
@@ -468,6 +469,7 @@ func main() {
 	portForwardCmd.PersistentFlags().StringVar(&serviceName, "servicename", "kurun", "Service name to set for the service")
 	portForwardCmd.PersistentFlags().StringSliceVarP(&labels, "label", "l", []string{}, "Pod labels to add")
 	portForwardCmd.PersistentFlags().StringVar(&tlsSecret, "tlssecret", "", "Use the certs for ghostunnel")
+	portForwardCmd.PersistentFlags().IntVar(&localPort, "localport", 8444, "Local port to use for port-forwarding")
 
 	rootCmd := &cobra.Command{Use: "kurun"}
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Namespace to use for the Pod/Service")
