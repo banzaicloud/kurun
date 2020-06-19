@@ -3,6 +3,7 @@ module github.com/banzaicloud/kurun
 go 1.12
 
 require (
+	github.com/ghodss/yaml v1.0.0
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/spf13/cobra v0.0.5
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect

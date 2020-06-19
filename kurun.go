@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -14,19 +17,26 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ghodss/yaml"
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8sYaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
+	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 const imageTag = "kurun"
+const kurunSchemaPrefix = "kurun://"
 
 var serviceAccount string
 var servicePort int
@@ -35,6 +45,7 @@ var tlsSecret string
 var podEnv []string
 var namespace string
 var labels []string
+var files []string
 var localPort int
 
 func getKubeConfig() (*rest.Config, error) {
@@ -461,6 +472,211 @@ var portForwardCmd = &cobra.Command{
 	},
 }
 
+func buildImage(goFiles []string) (string, error) {
+	hash := sha256.New()
+	for _, goFile := range goFiles {
+		absGoFile, err := filepath.Abs(goFile)
+		if err != nil {
+			return "", err
+		}
+
+		_, err = hash.Write([]byte(absGoFile))
+		if err != nil {
+			return "", err
+		}
+	}
+
+	imageTag := fmt.Sprintf("kurun-%x", hash.Sum(nil))
+	directory := "/tmp/kurun/" + imageTag
+
+	os.MkdirAll(directory, os.ModePerm)
+
+	goBuildArgs := []string{"build", "-o", directory + "/main"}
+	for _, gofile := range goFiles {
+		goBuildArgs = append(goBuildArgs, gofile)
+	}
+	goBuildCommand := exec.Command("go", goBuildArgs...)
+	goBuildCommand.Stderr = os.Stderr
+	goBuildCommand.Stdout = os.Stdout
+	env := os.Environ()
+	env = append(env, "GOOS=linux", "CGO_ENABLED=0")
+	goBuildCommand.Env = env
+
+	println(goBuildCommand.String())
+
+	if err := goBuildCommand.Run(); err != nil {
+		return "", err
+	}
+
+	file, err := os.Create(directory + "/Dockerfile")
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	fmt.Fprintf(file, "FROM alpine\nADD main /\n")
+
+	dockerBuildCommand := exec.Command("docker", "build", "-t", imageTag, directory)
+	dockerBuildCommand.Stderr = os.Stderr
+	dockerBuildCommand.Stdout = os.Stdout
+
+	if err := dockerBuildCommand.Run(); err != nil {
+		return "", err
+	}
+
+	kindCluster, err := isKindCluster()
+	if err != nil {
+		return "", err
+	}
+
+	if kindCluster {
+		kindLoadCommand := exec.Command("kind", "load", "docker-image", imageTag)
+		kindLoadCommand.Stderr = os.Stderr
+		kindLoadCommand.Stdout = os.Stdout
+
+		if err := kindLoadCommand.Run(); err != nil {
+			return "", err
+		}
+	}
+
+	return imageTag, nil
+}
+
+var applyCmd = &cobra.Command{
+	Use:   "apply [flags] -f pod.yaml",
+	Short: "Just like `kubectl apply -f pod.yaml` but images are built from local source code.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		var rawResources [][]byte
+
+		for _, manifest := range files {
+			manifestData, err := ioutil.ReadFile(manifest)
+			if err != nil {
+				return err
+			}
+
+			decoder := k8sYaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(manifestData), 4096)
+
+			var obj *unstructured.Unstructured
+
+			for {
+				err := decoder.Decode(&obj)
+				if err != nil && err != io.EOF {
+					return fmt.Errorf("failed to unmarshal manifest: %s", err)
+				}
+
+				if obj == nil {
+					break
+				}
+
+				var resource interface{}
+
+				switch obj.GetKind() {
+				case "Pod":
+					pod, err := unstructuredToPod(obj)
+					if err != nil {
+						return err
+					}
+
+					for i, c := range pod.Spec.Containers {
+						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
+							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
+							pod.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							if err != nil {
+								return err
+							}
+
+							pod.Spec.Containers[i].ImagePullPolicy = corev1.PullNever
+						}
+					}
+
+					resource = pod
+
+				case "Deployment":
+					deployment, err := unstructuredToDeployment(obj)
+					if err != nil {
+						return err
+					}
+
+					for i, c := range deployment.Spec.Template.Spec.Containers {
+						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
+							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
+							deployment.Spec.Template.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							if err != nil {
+								return err
+							}
+
+							deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullNever
+						}
+					}
+
+					resource = deployment
+				default:
+					resource = obj
+				}
+
+				rawResource, err := yaml.Marshal(resource)
+				if err != nil {
+					return err
+				}
+
+				rawResources = append(rawResources, rawResource)
+
+				obj = nil
+			}
+		}
+
+		resourceBuffer := bytes.NewBuffer(nil)
+
+		for _, rawResource := range rawResources {
+			_, err := resourceBuffer.Write(rawResource)
+			if err != nil {
+				return err
+			}
+
+			_, err = resourceBuffer.WriteString("\n---\n")
+			if err != nil {
+				return err
+			}
+		}
+
+		kubectlArgs := append([]string{"apply", "-f", "-"}, args...)
+
+		kubectlCommand := exec.Command("kubectl", kubectlArgs...)
+		kubectlCommand.Stdin = resourceBuffer
+		kubectlCommand.Stderr = os.Stderr
+		kubectlCommand.Stdout = os.Stdout
+
+		if err := kubectlCommand.Run(); err != nil {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return err
+		}
+
+		return nil
+	},
+}
+
+func unstructuredToPod(obj *unstructured.Unstructured) (*v1.Pod, error) {
+	json, err := runtime.Encode(unstructured.UnstructuredJSONScheme, obj)
+	if err != nil {
+		return nil, err
+	}
+	pod := new(v1.Pod)
+	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), json, pod)
+	return pod, err
+}
+
+func unstructuredToDeployment(obj *unstructured.Unstructured) (*appsv1.Deployment, error) {
+	json, err := runtime.Encode(unstructured.UnstructuredJSONScheme, obj)
+	if err != nil {
+		return nil, err
+	}
+	deployment := new(appsv1.Deployment)
+	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), json, deployment)
+	return deployment, err
+}
+
 func main() {
 	runCmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
 	runCmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", []string{}, "Environment variables to pass to the pod's containers")
@@ -471,9 +687,11 @@ func main() {
 	portForwardCmd.PersistentFlags().StringVar(&tlsSecret, "tlssecret", "", "Use the certs for ghostunnel")
 	portForwardCmd.PersistentFlags().IntVar(&localPort, "localport", 8444, "Local port to use for port-forwarding")
 
+	applyCmd.PersistentFlags().StringSliceVarP(&files, "filename", "f", []string{}, "Filename, directory, or URL to files to use to create the resource")
+
 	rootCmd := &cobra.Command{Use: "kurun"}
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Namespace to use for the Pod/Service")
-	rootCmd.AddCommand(runCmd, portForwardCmd)
+	rootCmd.AddCommand(runCmd, portForwardCmd, applyCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(2)
 	}
