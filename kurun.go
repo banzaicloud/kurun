@@ -591,6 +591,26 @@ var applyCmd = &cobra.Command{
 					}
 
 					resource = pod
+
+				case "Deployment":
+					deployment, err := unstructuredToDeployment(obj)
+					if err != nil {
+						return err
+					}
+
+					for i, c := range deployment.Spec.Template.Spec.Containers {
+						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
+							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
+							deployment.Spec.Template.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							if err != nil {
+								return err
+							}
+
+							deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullNever
+						}
+					}
+
+					resource = deployment
 				default:
 					resource = obj
 				}
@@ -645,6 +665,16 @@ func unstructuredToPod(obj *unstructured.Unstructured) (*v1.Pod, error) {
 	pod := new(v1.Pod)
 	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), json, pod)
 	return pod, err
+}
+
+func unstructuredToDeployment(obj *unstructured.Unstructured) (*appsv1.Deployment, error) {
+	json, err := runtime.Encode(unstructured.UnstructuredJSONScheme, obj)
+	if err != nil {
+		return nil, err
+	}
+	deployment := new(appsv1.Deployment)
+	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), json, deployment)
+	return deployment, err
 }
 
 func main() {
