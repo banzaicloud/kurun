@@ -543,7 +543,7 @@ func buildImage(goFiles []string) (string, error) {
 }
 
 var applyCmd = &cobra.Command{
-	Use:   "apply [flags] -- kubernetes manifests... [arguments...]",
+	Use:   "apply [flags] -f pod.yaml",
 	Short: "Just like `kubectl apply -f pod.yaml` but images are built from local source code.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 
