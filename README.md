@@ -2,6 +2,7 @@
 
 - Just like `go run main.go` but executed inside Kubernetes with one command.
 - Just like `kubectl port-forward ...` just the other way around!
+- Just like `kubectl apply -f pod.yaml` but images are built from local source code.
 
 ### Synopsis
 
@@ -10,13 +11,14 @@ Usage:
   kurun [command]
 
 Available Commands:
+  apply        Just like `kubectl apply -f pod.yaml` but images are built from local source code.
   help         Help about any command
   port-forward Just like `kubectl port-forward ...`, just the other way around!
   run          Just like `go run main.go` but executed inside Kubernetes with one command.
 
 Flags:
   -h, --help               help for kurun
-      --namespace string   Namespace to use for the Pod/Service
+      --namespace string   Namespace to use for the Pod/Service (default "default")
 
 Use "kurun [command] --help" for more information about a command.
 ```
@@ -53,6 +55,19 @@ kurun run test.go arg1 arg2 arg3
 
 ```bash
 kurun port-forward localhost:4443
+```
+
+```bash
+kurun apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp
+spec:
+  containers:
+  - image: kurun://cmd/myapp/main.go
+    name: myapp
+EOF
 ```
 
 ### `kurun` is like `go run` to Kubernetes
