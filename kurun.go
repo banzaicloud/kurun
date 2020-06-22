@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -35,7 +35,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const imageTag = "kurun"
 const kurunSchemaPrefix = "kurun://"
 
 var serviceAccount string
@@ -113,62 +112,9 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		os.MkdirAll("/tmp/kurun", os.ModePerm)
-
-		goBuildArgs := []string{"build", "-o", "/tmp/kurun/main"}
-		for _, gofile := range gofiles {
-			goBuildArgs = append(goBuildArgs, gofile)
-		}
-		goBuildCommand := exec.Command("go", goBuildArgs...)
-		goBuildCommand.Stderr = os.Stderr
-		goBuildCommand.Stdout = os.Stdout
-		env := os.Environ()
-		env = append(env, "GOOS=linux", "CGO_ENABLED=0")
-		goBuildCommand.Env = env
-
-		if err := goBuildCommand.Run(); err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
-			return err
-		}
-
-		file, err := os.Create("/tmp/kurun/Dockerfile")
+		imageTag, err := buildImage(gofiles)
 		if err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
 			return err
-		}
-		defer file.Close()
-
-		fmt.Fprintf(file, "FROM alpine\nADD main /\n")
-
-		dockerBuildCommand := exec.Command("docker", "build", "-t", imageTag, "/tmp/kurun")
-		dockerBuildCommand.Stderr = os.Stderr
-		dockerBuildCommand.Stdout = os.Stdout
-
-		if err := dockerBuildCommand.Run(); err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
-			return err
-		}
-
-		kindCluster, err := isKindCluster()
-		if err != nil {
-			cmd.SilenceUsage = true
-			cmd.SilenceErrors = true
-			return err
-		}
-
-		if kindCluster {
-			kindLoadCommand := exec.Command("kind", "load", "docker-image", imageTag)
-			kindLoadCommand.Stderr = os.Stderr
-			kindLoadCommand.Stdout = os.Stdout
-
-			if err := kindLoadCommand.Run(); err != nil {
-				cmd.SilenceUsage = true
-				cmd.SilenceErrors = true
-				return err
-			}
 		}
 
 		kubectlArgs := []string{
@@ -473,7 +419,7 @@ var portForwardCmd = &cobra.Command{
 }
 
 func buildImage(goFiles []string) (string, error) {
-	hash := sha256.New()
+	hash := sha1.New()
 	for _, goFile := range goFiles {
 		absGoFile, err := filepath.Abs(goFile)
 		if err != nil {
@@ -514,7 +460,9 @@ func buildImage(goFiles []string) (string, error) {
 	}
 	defer file.Close()
 
-	fmt.Fprintf(file, "FROM alpine\nADD main /\n")
+	fmt.Fprintln(file, "FROM alpine")
+	fmt.Fprintln(file, "ADD main /")
+	fmt.Fprintln(file, "CMD /main")
 
 	dockerBuildCommand := exec.Command("docker", "build", "-t", imageTag, directory)
 	dockerBuildCommand.Stderr = os.Stderr
