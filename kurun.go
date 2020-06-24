@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -497,13 +497,33 @@ var applyCmd = &cobra.Command{
 
 		var rawResources [][]byte
 
-		for _, manifest := range files {
-			manifestData, err := ioutil.ReadFile(manifest)
-			if err != nil {
-				return err
+		for _, file := range files {
+
+			var manifest io.Reader
+
+			if strings.HasPrefix(file, "http://") || strings.HasPrefix(file, "https://") {
+				resp, err := http.Get(file)
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode < 200 || resp.StatusCode > 299 {
+					return fmt.Errorf("unable to read URL %s, server reported %d", file, resp.StatusCode)
+				}
+
+				defer resp.Body.Close()
+				manifest = resp.Body
+
+			} else if file == "-" {
+				manifest = os.Stdin
+			} else {
+				var err error
+				manifest, err = os.Open(file)
+				if err != nil {
+					return err
+				}
 			}
 
-			decoder := k8sYaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(manifestData), 4096)
+			decoder := k8sYaml.NewYAMLOrJSONDecoder(manifest, 4096)
 
 			var obj *unstructured.Unstructured
 
@@ -635,7 +655,7 @@ func main() {
 	portForwardCmd.PersistentFlags().StringVar(&tlsSecret, "tlssecret", "", "Use the certs for ghostunnel")
 	portForwardCmd.PersistentFlags().IntVar(&localPort, "localport", 8444, "Local port to use for port-forwarding")
 
-	applyCmd.PersistentFlags().StringSliceVarP(&files, "filename", "f", []string{}, "Filename, directory, or URL to files to use to create the resource")
+	applyCmd.PersistentFlags().StringSliceVarP(&files, "filename", "f", []string{}, "Filename, or URL to files to use to create the resource (use - for STDIN)")
 
 	rootCmd := &cobra.Command{Use: "kurun"}
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Namespace to use for the Pod/Service")
