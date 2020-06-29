@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -112,7 +113,7 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		imageTag, err := buildImage(gofiles)
+		imageTag, imageHash, err := buildImage(gofiles)
 		if err != nil {
 			return err
 		}
@@ -120,7 +121,7 @@ var runCmd = &cobra.Command{
 		kubectlArgs := []string{
 			"run", imageTag,
 			"-it",
-			"--image=" + imageTag,
+			"--image=" + imageHash,
 			"--quiet",
 			"--image-pull-policy=IfNotPresent",
 			"--restart=Never",
@@ -418,17 +419,17 @@ var portForwardCmd = &cobra.Command{
 	},
 }
 
-func buildImage(goFiles []string) (string, error) {
+func buildImage(goFiles []string) (string, string, error) {
 	hash := sha1.New()
 	for _, goFile := range goFiles {
 		absGoFile, err := filepath.Abs(goFile)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		_, err = hash.Write([]byte(absGoFile))
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 
@@ -451,12 +452,12 @@ func buildImage(goFiles []string) (string, error) {
 	println(goBuildCommand.String())
 
 	if err := goBuildCommand.Run(); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	file, err := os.Create(directory + "/Dockerfile")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer file.Close()
 
@@ -464,30 +465,51 @@ func buildImage(goFiles []string) (string, error) {
 	fmt.Fprintln(file, "ADD main /")
 	fmt.Fprintln(file, "CMD /main")
 
+	dockerOutput := bytes.NewBuffer(nil)
+
 	dockerBuildCommand := exec.Command("docker", "build", "-t", imageTag, directory)
 	dockerBuildCommand.Stderr = os.Stderr
-	dockerBuildCommand.Stdout = os.Stdout
+	dockerBuildCommand.Stdout = io.MultiWriter(os.Stdout, dockerOutput)
 
 	if err := dockerBuildCommand.Run(); err != nil {
-		return "", err
+		return "", "", err
 	}
+
+	hashRegexp := regexp.MustCompile("Successfully built ([a-z0-9]*)")
+	matches := hashRegexp.FindStringSubmatch(dockerOutput.String())
+	if len(matches) != 2 {
+		return "", "", fmt.Errorf("failed to find image hash in Docker output")
+	}
+
+	imageID := matches[1]
+
+	dockerOutput.Reset()
+
+	dockerInspectCommand := exec.Command("docker", "inspect", imageID, "-f", "{{.Id}}")
+	dockerInspectCommand.Stderr = os.Stderr
+	dockerInspectCommand.Stdout = dockerOutput
+	if err := dockerInspectCommand.Run(); err != nil {
+		return "", "", err
+	}
+
+	imageHash := strings.TrimSuffix(dockerOutput.String(), "\n")
 
 	kindCluster, err := isKindCluster()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	if kindCluster {
-		kindLoadCommand := exec.Command("kind", "load", "docker-image", imageTag)
+		kindLoadCommand := exec.Command("kind", "load", "docker-image", imageHash)
 		kindLoadCommand.Stderr = os.Stderr
 		kindLoadCommand.Stdout = os.Stdout
 
 		if err := kindLoadCommand.Run(); err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 
-	return imageTag, nil
+	return imageTag, imageHash, nil
 }
 
 var applyCmd = &cobra.Command{
@@ -549,7 +571,7 @@ var applyCmd = &cobra.Command{
 					for i, c := range pod.Spec.Containers {
 						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
 							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
-							pod.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							_, pod.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
 							if err != nil {
 								return err
 							}
@@ -569,7 +591,7 @@ var applyCmd = &cobra.Command{
 					for i, c := range deployment.Spec.Template.Spec.Containers {
 						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
 							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
-							deployment.Spec.Template.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							_, deployment.Spec.Template.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
 							if err != nil {
 								return err
 							}
