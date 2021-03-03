@@ -396,14 +396,14 @@ var portForwardCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println("Waiting for kubeclt port-forward to build up the connection")
+		fmt.Println("Waiting for kubectl port-forward to build up the connection")
 		time.Sleep(2 * time.Second)
 
 		/////
 
 		upstream := args[0]
 
-		inletsCommand := exec.Command("inlets", "client", "--upstream", upstream, "--remote", "127.0.0.1:"+fmt.Sprint(localPort), "--token", token)
+		inletsCommand := exec.Command("inlets", "client", "--insecure", "--upstream", upstream, "--url", "ws://127.0.0.1:"+fmt.Sprint(localPort), "--token", token)
 		inletsCommand.Stderr = os.Stderr
 		inletsCommand.Stdout = os.Stdout
 
