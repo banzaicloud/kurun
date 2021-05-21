@@ -277,7 +277,7 @@ var portForwardCmd = &cobra.Command{
 		containers := []corev1.Container{
 			{
 				Name:    "inlets-server",
-				Image:   "inlets/inlets:2.7.0",
+				Image:   "ghcr.io/inlets/inlets:3.0.1",
 				Command: []string{"inlets", "server", "-p", fmt.Sprint(inletsPort), "--token", token},
 				Ports:   ports,
 			},
