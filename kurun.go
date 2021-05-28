@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -113,15 +112,15 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		imageTag, imageHash, err := buildImage(gofiles)
+		image, err := buildImage(gofiles)
 		if err != nil {
 			return err
 		}
 
 		kubectlArgs := []string{
-			"run", imageTag,
+			"run", strings.Split(image, ":")[0],
 			"-it",
-			"--image=" + imageHash,
+			"--image=docker.io/library/" + image,
 			"--quiet",
 			"--image-pull-policy=IfNotPresent",
 			"--restart=Never",
@@ -419,17 +418,17 @@ var portForwardCmd = &cobra.Command{
 	},
 }
 
-func buildImage(goFiles []string) (string, string, error) {
+func buildImage(goFiles []string) (string, error) {
 	hash := sha1.New()
 	for _, goFile := range goFiles {
 		absGoFile, err := filepath.Abs(goFile)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 
 		_, err = hash.Write([]byte(absGoFile))
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 	}
 
@@ -452,12 +451,12 @@ func buildImage(goFiles []string) (string, string, error) {
 	println(goBuildCommand.String())
 
 	if err := goBuildCommand.Run(); err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	file, err := os.Create(directory + "/Dockerfile")
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	defer file.Close()
 
@@ -465,51 +464,51 @@ func buildImage(goFiles []string) (string, string, error) {
 	fmt.Fprintln(file, "ADD main /")
 	fmt.Fprintln(file, "CMD /main")
 
-	dockerOutput := bytes.NewBuffer(nil)
-
 	dockerBuildCommand := exec.Command("docker", "build", "-t", imageTag, directory)
 	dockerBuildCommand.Stderr = os.Stderr
-	dockerBuildCommand.Stdout = io.MultiWriter(os.Stdout, dockerOutput)
+	dockerBuildCommand.Stdout = os.Stdout
 
 	if err := dockerBuildCommand.Run(); err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	hashRegexp := regexp.MustCompile("Successfully built ([a-z0-9]*)")
-	matches := hashRegexp.FindStringSubmatch(dockerOutput.String())
-	if len(matches) != 2 {
-		return "", "", fmt.Errorf("failed to find image hash in Docker output")
-	}
+	dockerOutput := bytes.NewBuffer(nil)
 
-	imageID := matches[1]
-
-	dockerOutput.Reset()
-
-	dockerInspectCommand := exec.Command("docker", "inspect", imageID, "-f", "{{.Id}}")
+	dockerInspectCommand := exec.Command("docker", "inspect", imageTag, "-f", "{{.Id}}")
 	dockerInspectCommand.Stderr = os.Stderr
 	dockerInspectCommand.Stdout = dockerOutput
 	if err := dockerInspectCommand.Run(); err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	imageHash := strings.TrimSuffix(dockerOutput.String(), "\n")
+	imageHash := strings.TrimPrefix(strings.TrimSuffix(dockerOutput.String(), "\n"), "sha256:")
 
 	kindCluster, err := isKindCluster()
 	if err != nil {
-		return "", "", err
+		return "", err
+	}
+
+	fullImageTag := imageTag + ":" + imageHash
+
+	dockerTagCommand := exec.Command("docker", "tag", imageTag, fullImageTag)
+	dockerTagCommand.Stderr = os.Stderr
+	dockerTagCommand.Stdout = os.Stdout
+
+	if err := dockerTagCommand.Run(); err != nil {
+		return "", err
 	}
 
 	if kindCluster {
-		kindLoadCommand := exec.Command("kind", "load", "docker-image", imageHash)
+		kindLoadCommand := exec.Command("kind", "load", "docker-image", fullImageTag)
 		kindLoadCommand.Stderr = os.Stderr
 		kindLoadCommand.Stdout = os.Stdout
 
 		if err := kindLoadCommand.Run(); err != nil {
-			return "", "", err
+			return "", err
 		}
 	}
 
-	return imageTag, imageHash, nil
+	return fullImageTag, nil
 }
 
 var applyCmd = &cobra.Command{
@@ -571,7 +570,7 @@ var applyCmd = &cobra.Command{
 					for i, c := range pod.Spec.Containers {
 						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
 							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
-							_, pod.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							pod.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
 							if err != nil {
 								return err
 							}
@@ -591,7 +590,7 @@ var applyCmd = &cobra.Command{
 					for i, c := range deployment.Spec.Template.Spec.Containers {
 						if strings.HasPrefix(c.Image, kurunSchemaPrefix) {
 							goFilesPath := strings.TrimPrefix(c.Image, kurunSchemaPrefix)
-							_, deployment.Spec.Template.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
+							deployment.Spec.Template.Spec.Containers[i].Image, err = buildImage([]string{goFilesPath})
 							if err != nil {
 								return err
 							}
