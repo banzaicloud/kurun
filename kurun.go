@@ -117,9 +117,14 @@ var runCmd = &cobra.Command{
 			return err
 		}
 
+		mode := "-i"
+		if fileInfo, _ := os.Stdout.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
+			mode += "t"
+		}
+
 		kubectlArgs := []string{
 			"run", strings.Split(image, ":")[0],
-			"-it",
+			mode,
 			"--image=docker.io/library/" + image,
 			"--quiet",
 			"--image-pull-policy=IfNotPresent",
