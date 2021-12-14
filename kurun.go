@@ -21,12 +21,13 @@ import (
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/json"
 	k8sYaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
@@ -122,15 +123,39 @@ var runCmd = &cobra.Command{
 			mode += "t"
 		}
 
+		podName := strings.Split(image, ":")[0]
+
+		podOverride := map[string]interface{}{
+			"spec": corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  podName,
+						Image: "docker.io/library/" + image,
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								"cpu":    resource.MustParse("100m"),
+								"memory": resource.MustParse("128Mi"),
+							},
+						},
+					},
+				},
+			},
+		}
+
+		overrides, err := json.Marshal(podOverride)
+		if err != nil {
+			return err
+		}
+
 		kubectlArgs := []string{
-			"run", strings.Split(image, ":")[0],
+			"run", podName,
 			mode,
 			"--image=docker.io/library/" + image,
 			"--quiet",
 			"--image-pull-policy=IfNotPresent",
 			"--restart=Never",
 			"--rm",
-			"--limits=cpu=100m,memory=128Mi",
+			"--overrides=" + string(overrides),
 		}
 
 		if serviceAccount != "" {
@@ -651,13 +676,13 @@ var applyCmd = &cobra.Command{
 	},
 }
 
-func unstructuredToPod(obj *unstructured.Unstructured) (*v1.Pod, error) {
+func unstructuredToPod(obj *unstructured.Unstructured) (*corev1.Pod, error) {
 	json, err := runtime.Encode(unstructured.UnstructuredJSONScheme, obj)
 	if err != nil {
 		return nil, err
 	}
-	pod := new(v1.Pod)
-	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), json, pod)
+	pod := new(corev1.Pod)
+	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(corev1.SchemeGroupVersion), json, pod)
 	return pod, err
 }
 
@@ -667,7 +692,7 @@ func unstructuredToDeployment(obj *unstructured.Unstructured) (*appsv1.Deploymen
 		return nil, err
 	}
 	deployment := new(appsv1.Deployment)
-	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), json, deployment)
+	err = runtime.DecodeInto(clientscheme.Codecs.LegacyCodec(corev1.SchemeGroupVersion), json, deployment)
 	return deployment, err
 }
 
