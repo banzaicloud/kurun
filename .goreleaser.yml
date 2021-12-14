@@ -32,6 +32,8 @@ brews:
             owner: banzaicloud
             name: homebrew-tap
         folder: Formula
+        ids:
+            - targz
         homepage: https://banzaicloud.com/blog/kurun
         description: Run main.go in Kubernetes with one command
         test: |
