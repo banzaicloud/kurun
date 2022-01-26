@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,16 +24,22 @@ func TestTunnel(t *testing.T) {
 		}),
 	)
 	require.NotNil(t, server)
-	go http.ListenAndServe("localhost:10080", server)
-	go http.ListenAndServe("localhost:10081", tunnel.RequestHandler{RoundTripper: server})
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
+	srv := &http.Server{Addr: "localhost:10081", Handler: tunnel.RequestHandler{RoundTripper: server}}
+	go srv.ListenAndServe()
+	defer srv.Shutdown(context.Background())
 
 	client := NewClient("ws://localhost:10080", "localhost:10082")
 	err := client.Start(context.Background())
 	require.NoError(t, err)
 
-	go http.ListenAndServe("localhost:10082", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	bck := &http.Server{Addr: "localhost:10082", Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Write([]byte(r.URL.Path))
-	}))
+	})}
+	go bck.ListenAndServe()
+	defer bck.Shutdown(context.Background())
 
 	value := "/alma/korte/maci"
 	resp, err := http.Get("http://localhost:10081" + value)
@@ -43,6 +48,7 @@ func TestTunnel(t *testing.T) {
 	dat, err := ioutil.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, value, string(dat))
+
 }
 
 func TestTunnelConcurrency(t *testing.T) {
@@ -53,27 +59,26 @@ func TestTunnelConcurrency(t *testing.T) {
 		}),
 	)
 	require.NotNil(t, server)
-	go http.ListenAndServe("localhost:10080", server)
-	go http.ListenAndServe("localhost:10081", tunnel.RequestHandler{RoundTripper: server})
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
+	srv := &http.Server{Addr: "localhost:10081", Handler: tunnel.RequestHandler{RoundTripper: server}}
+	go srv.ListenAndServe()
+	defer srv.Shutdown(context.Background())
 
 	client := NewClient("ws://localhost:10080", "localhost:10082")
 	err := client.Start(context.Background())
 	require.NoError(t, err)
 
-	reqCnt := int64(0)
-	maxCnt := int64(0)
-	var mux sync.Mutex
-	go http.ListenAndServe("localhost:10082", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		mux.Lock()
-		reqCnt++
-		if reqCnt > maxCnt {
-			maxCnt = reqCnt
-		}
-		mux.Unlock()
+	cc := NewCounter()
+	bck := &http.Server{Addr: "localhost:10082", Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		cc.Inc()
 		time.Sleep(100 * time.Millisecond)
 		rw.Write([]byte(r.URL.Path))
-		atomic.AddInt64(&reqCnt, int64(-1))
-	}))
+		cc.Dec()
+	})}
+	go bck.ListenAndServe()
+	defer bck.Shutdown(context.Background())
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -91,7 +96,8 @@ func TestTunnelConcurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	require.Greater(t, maxCnt, int64(1))
+	require.Greater(t, cc.Max(), 1)
+	require.Equal(t, cc.Min(), 0)
 }
 
 func TestTunnelTLS(t *testing.T) {
@@ -102,7 +108,9 @@ func TestTunnelTLS(t *testing.T) {
 		}),
 	)
 	require.NotNil(t, server)
-	go http.ListenAndServe("localhost:10080", server)
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
 
 	certFile := "../../localhost+2.pem"
 	keyFile := "../../localhost+2-key.pem"
@@ -116,12 +124,13 @@ func TestTunnelTLS(t *testing.T) {
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
 	}
-	reqSrv := http.Server{
+	srv := http.Server{
 		Addr:      "localhost:10081",
 		Handler:   tunnel.RequestHandler{RoundTripper: server},
 		TLSConfig: tlsCfg.Clone(),
 	}
-	go reqSrv.ListenAndServeTLS("", "")
+	go srv.ListenAndServeTLS("", "")
+	defer srv.Shutdown(context.Background())
 
 	clcl := http.Client{
 		Transport: &http.Transport{
@@ -131,14 +140,15 @@ func TestTunnelTLS(t *testing.T) {
 	client := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl), WithTLSTarget())
 	require.NoError(t, client.Start(context.Background()))
 
-	prxSrv := http.Server{
+	bck := http.Server{
 		Addr: "localhost:10082",
 		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 			rw.Write([]byte(r.URL.Path))
 		}),
 		TLSConfig: tlsCfg.Clone(),
 	}
-	go prxSrv.ListenAndServeTLS("", "")
+	go bck.ListenAndServeTLS("", "")
+	defer bck.Shutdown(context.Background())
 
 	value := "/alma/korte/maci"
 	cl := http.Client{
