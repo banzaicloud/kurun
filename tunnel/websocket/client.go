@@ -34,9 +34,22 @@ func NewClient(serverAddr string, targetHost string, options ...ClientOption) *C
 
 type ClientOption func(*Client)
 
+func WithHTTPClient(httpClient *http.Client) ClientOption {
+	return ClientOption(func(c *Client) {
+		c.httpClient = httpClient
+	})
+}
+
+func WithTLSTarget() ClientOption {
+	return ClientOption(func(c *Client) {
+		c.targetTLS = true
+	})
+}
+
 type Client struct {
 	serverAddr   string
 	targetHost   string
+	targetTLS    bool
 	httpClient   *http.Client
 	pingInterval time.Duration
 	startOnce    sync.Once
@@ -109,7 +122,7 @@ func (c *Client) handleRequest(reqID requestID, req *http.Request) {
 	req.RequestURI = "" // must not be set
 	req.URL.Host = c.targetHost
 	req.URL.Scheme = "http"
-	if req.TLS != nil {
+	if c.targetTLS {
 		req.URL.Scheme = "https"
 	}
 
