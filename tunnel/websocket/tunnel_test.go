@@ -2,6 +2,8 @@ package websocket
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -90,4 +92,64 @@ func TestTunnelConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 	require.Greater(t, maxCnt, int64(1))
+}
+
+func TestTunnelTLS(t *testing.T) {
+	server := NewServer(
+		WithUpgrader(websocket.Upgrader{
+			CheckOrigin:      func(r *http.Request) bool { return true },
+			HandshakeTimeout: 15 * time.Second,
+		}),
+	)
+	require.NotNil(t, server)
+	go http.ListenAndServe("localhost:10080", server)
+
+	certFile := "../../localhost+2.pem"
+	keyFile := "../../localhost+2-key.pem"
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	require.NoError(t, err)
+	caBytes, err := ioutil.ReadFile("../../rootCA.pem")
+	require.NoError(t, err)
+	certPool := x509.NewCertPool()
+	require.True(t, certPool.AppendCertsFromPEM(caBytes))
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+	}
+	reqSrv := http.Server{
+		Addr:      "localhost:10081",
+		Handler:   tunnel.RequestHandler{RoundTripper: server},
+		TLSConfig: tlsCfg.Clone(),
+	}
+	go reqSrv.ListenAndServeTLS("", "")
+
+	clcl := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg.Clone(),
+		},
+	}
+	client := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl), WithTLSTarget())
+	require.NoError(t, client.Start(context.Background()))
+
+	prxSrv := http.Server{
+		Addr: "localhost:10082",
+		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.Write([]byte(r.URL.Path))
+		}),
+		TLSConfig: tlsCfg.Clone(),
+	}
+	go prxSrv.ListenAndServeTLS("", "")
+
+	value := "/alma/korte/maci"
+	cl := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg.Clone(),
+		},
+	}
+	resp, err := cl.Get("https://localhost:10081" + value)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	dat, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, value, string(dat))
 }
