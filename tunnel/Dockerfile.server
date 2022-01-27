@@ -1,0 +1,17 @@
+FROM golang:1.17.6-alpine3.14 as builder
+
+RUN mkdir -p /build
+
+COPY . /build 
+
+WORKDIR /build
+
+RUN go build -o tunnel ./cmd/server/main.go
+
+FROM alpine
+
+COPY --from=builder /build/tunnel /tunnel
+
+ENTRYPOINT [ "/tunnel" ]
+
+EXPOSE 80 443
