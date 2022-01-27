@@ -1,0 +1,121 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: tunnel-ca-issuer
+  namespace: default
+spec:
+  selfSigned: {}
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tunnel-ca-cert  # this name should match the one appeared in kustomizeconfig.yaml
+  namespace: default
+spec:
+  isCA: true
+  commonName: tunnel-ca
+  issuerRef:
+    kind: Issuer
+    name: tunnel-ca-issuer
+  secretName: tunnel-ca-secret # this secret will not be prefixed, since it's not managed by kustomize
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: tunnel-issuer
+  namespace: default
+spec:
+  ca:
+    secretName: tunnel-ca-secret
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tunnel-cert  # this name should match the one appeared in kustomizeconfig.yaml
+  namespace: default
+spec:
+  isCA: true
+  dnsNames:
+  - localhost
+  - tunnel.default
+  - tunnel.default.svc
+  issuerRef:
+    kind: Issuer
+    name: tunnel-issuer
+  secretName: tunnel-secret # this secret will not be prefixed, since it's not managed by kustomize
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tunnel
+  labels:
+   app.kubernetes.io/name: tunnel
+spec:
+  containers:
+  - image: tunnel
+    imagePullPolicy: IfNotPresent
+    name: tunnel
+    ports:
+    - name: https
+      containerPort: 443
+      protocol: TCP
+    - containerPort: 80
+    args:
+    - -cert
+    - /tmp/tls.crt
+    - -key
+    - /tmp/tls.key
+    - -ca
+    - /tmp/ca.crt
+    volumeMounts:
+    - mountPath: /tmp
+      name: certs    
+  volumes:
+  - name: certs
+    secret:
+      secretName: tunnel-secret
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: tunnel-service
+  namespace: default
+spec:
+  ports:
+  - name: https
+    port: 443
+    targetPort: https
+  selector:
+    app.kubernetes.io/name: tunnel
+
+
+# apiVersion: admissionregistration.k8s.io/v1beta1
+# kind: MutatingWebhookConfiguration
+# metadata:
+#   name: tunnel-webhook
+#   annotations:
+#     certmanager.k8s.io/inject-ca-from: "default/tunnel-cert"
+# webhooks:
+#   - name: tunnel-webhook.banzaicloud.com
+#     clientConfig:
+#       service:
+#         name: sample-tailer-webhook
+#         namespace: default
+#         path: "/mutate-v1-pod"
+#       caBundle: $(cat "$(mkcert --CAROOT)/rootCA.pem" | base64)
+#     rules:
+#       - operations: [ "CREATE" ]
+#         apiGroups: [""]
+#         apiVersions: ["v1"]
+#         resources: ["pods"]
+#         scope: "*"

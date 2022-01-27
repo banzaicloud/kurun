@@ -20,7 +20,7 @@ func NewClient(serverAddr string, targetHost string, options ...ClientOption) *C
 		serverAddr:   serverAddr,
 		targetHost:   targetHost,
 		httpClient:   http.DefaultClient,
-		pingInterval: 30 * time.Second,
+		pingInterval: 10 * time.Second,
 		respCh:       make(chan responseItem),
 	}
 	for _, option := range options {
