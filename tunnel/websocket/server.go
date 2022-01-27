@@ -3,7 +3,9 @@ package websocket
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -45,6 +47,9 @@ type Server struct {
 }
 
 func (s *Server) RoundTrip(req *http.Request) (*http.Response, error) {
+	if s.wsConn == nil {
+		return nil, fmt.Errorf("no websocket connection")
+	}
 	respCh := s.queueRequest(req)
 
 	select {
@@ -59,9 +64,12 @@ func (s *Server) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.wsConn != nil {
-		return // TODO: how should we handle further connection attempts
-	}
+	// it won't let reconnect to WS, since s.wsConn will not be nil anymore
+	// if s.wsConn != nil {
+	// 	return // TODO: how should we handle further connection attempts
+	// }
+
+	log.Println("Websocket connection received:", r)
 
 	var err error
 	s.wsConn, err = s.upgrader.Upgrade(w, r, nil)
@@ -113,6 +121,7 @@ func (s *Server) processRequests() {
 			if !ok {
 				return
 			}
+			log.Println("Proxying request:", req)
 			wc, err := s.wsConn.NextWriter(websocket.BinaryMessage)
 			if err != nil {
 				s.respondToRequest(req, nil, err)
@@ -152,6 +161,7 @@ func (s *Server) readWebSocket() {
 				continue
 			}
 			// TODO: log error
+			log.Println(err)
 			return
 		}
 		switch typ {

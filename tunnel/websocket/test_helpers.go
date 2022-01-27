@@ -1,6 +1,14 @@
 package websocket
 
-import "sync"
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 const MaxUint = ^uint(0)
 const MinUint = 0
@@ -68,4 +76,22 @@ func (c *ConcurrencyCounter) update() {
 	if c.count < c.min {
 		c.min = c.count
 	}
+}
+
+var tlsConfig *tls.Config
+
+func loadTLSConfig(t *testing.T) {
+	certFile := "../../localhost+2.pem"
+	keyFile := "../../localhost+2-key.pem"
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	require.NoError(t, err)
+	caBytes, err := ioutil.ReadFile("../../rootCA.pem")
+	require.NoError(t, err)
+	certPool := x509.NewCertPool()
+	require.True(t, certPool.AppendCertsFromPEM(caBytes))
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+	}
+	tlsConfig = tlsCfg
 }

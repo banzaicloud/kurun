@@ -2,8 +2,6 @@ package websocket
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -101,6 +99,8 @@ func TestTunnelConcurrency(t *testing.T) {
 }
 
 func TestTunnelTLS(t *testing.T) {
+	loadTLSConfig(t)
+
 	server := NewServer(
 		WithUpgrader(websocket.Upgrader{
 			CheckOrigin:      func(r *http.Request) bool { return true },
@@ -112,29 +112,17 @@ func TestTunnelTLS(t *testing.T) {
 	go wsSrv.ListenAndServe()
 	defer wsSrv.Shutdown(context.Background())
 
-	certFile := "../../localhost+2.pem"
-	keyFile := "../../localhost+2-key.pem"
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	require.NoError(t, err)
-	caBytes, err := ioutil.ReadFile("../../rootCA.pem")
-	require.NoError(t, err)
-	certPool := x509.NewCertPool()
-	require.True(t, certPool.AppendCertsFromPEM(caBytes))
-	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      certPool,
-	}
 	srv := http.Server{
 		Addr:      "localhost:10081",
 		Handler:   tunnel.RequestHandler{RoundTripper: server},
-		TLSConfig: tlsCfg.Clone(),
+		TLSConfig: tlsConfig.Clone(),
 	}
 	go srv.ListenAndServeTLS("", "")
 	defer srv.Shutdown(context.Background())
 
 	clcl := http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: tlsCfg.Clone(),
+			TLSClientConfig: tlsConfig.Clone(),
 		},
 	}
 	client := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl), WithTLSTarget())
@@ -145,7 +133,7 @@ func TestTunnelTLS(t *testing.T) {
 		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 			rw.Write([]byte(r.URL.Path))
 		}),
-		TLSConfig: tlsCfg.Clone(),
+		TLSConfig: tlsConfig.Clone(),
 	}
 	go bck.ListenAndServeTLS("", "")
 	defer bck.Shutdown(context.Background())
@@ -153,7 +141,7 @@ func TestTunnelTLS(t *testing.T) {
 	value := "/alma/korte/maci"
 	cl := http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: tlsCfg.Clone(),
+			TLSClientConfig: tlsConfig.Clone(),
 		},
 	}
 	resp, err := cl.Get("https://localhost:10081" + value)
@@ -162,4 +150,123 @@ func TestTunnelTLS(t *testing.T) {
 	dat, err := ioutil.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, value, string(dat))
+}
+
+func TestRequestHandlingWithoutWebsocketConnection(t *testing.T) {
+	loadTLSConfig(t)
+
+	server := NewServer(
+		WithUpgrader(websocket.Upgrader{
+			CheckOrigin:      func(r *http.Request) bool { return true },
+			HandshakeTimeout: 15 * time.Second,
+		}),
+	)
+	require.NotNil(t, server)
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
+
+	srv := http.Server{
+		Addr:      "localhost:10081",
+		Handler:   tunnel.RequestHandler{RoundTripper: server},
+		TLSConfig: tlsConfig.Clone(),
+	}
+	go srv.ListenAndServeTLS("", "")
+	defer srv.Shutdown(context.Background())
+
+	value := "/alma/korte/maci"
+	cl := http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	resp, err := cl.Get("https://localhost:10081" + value)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+func TestProxiedErrorMessage(t *testing.T) {
+	loadTLSConfig(t)
+
+	server := NewServer(
+		WithUpgrader(websocket.Upgrader{
+			CheckOrigin:      func(r *http.Request) bool { return true },
+			HandshakeTimeout: 15 * time.Second,
+		}),
+	)
+	require.NotNil(t, server)
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
+
+	srv := http.Server{
+		Addr:      "localhost:10081",
+		Handler:   tunnel.RequestHandler{RoundTripper: server},
+		TLSConfig: tlsConfig.Clone(),
+	}
+	go srv.ListenAndServeTLS("", "")
+	defer srv.Shutdown(context.Background())
+
+	clcl := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	client := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl), WithTLSTarget())
+	require.NoError(t, client.Start(context.Background()))
+
+	value := "/alma/korte/maci"
+	cl := http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	resp, err := cl.Get("https://localhost:10081" + value)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	dat, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.Equal(t, "Get \"https://localhost:10082/alma/korte/maci\": dial tcp [::1]:10082: connect: connection refused", string(dat))
+}
+
+func TestMultipleWSConnection(t *testing.T) {
+	loadTLSConfig(t)
+
+	server := NewServer(
+		WithUpgrader(websocket.Upgrader{
+			CheckOrigin:      func(r *http.Request) bool { return true },
+			HandshakeTimeout: 15 * time.Second,
+		}),
+	)
+	require.NotNil(t, server)
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
+
+	srv := http.Server{
+		Addr:      "localhost:10081",
+		Handler:   tunnel.RequestHandler{RoundTripper: server},
+		TLSConfig: tlsConfig.Clone(),
+	}
+	go srv.ListenAndServeTLS("", "")
+	defer srv.Shutdown(context.Background())
+
+	clcl := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	client := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl), WithTLSTarget())
+	require.NoError(t, client.Start(context.Background()))
+
+	clcl2 := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	client2 := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl2), WithTLSTarget())
+	require.NoError(t, client2.Start(context.Background()))
 }
