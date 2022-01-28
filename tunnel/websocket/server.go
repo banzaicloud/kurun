@@ -2,9 +2,11 @@ package websocket
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +15,16 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+func readBody(resp *http.Response) {
+	b, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("response body size:", len(b))
+	resp.Body = io.NopCloser(bytes.NewReader(b))
+}
 
 func NewServer(options ...ServerOption) *Server {
 	s := &Server{
@@ -57,6 +69,7 @@ func (s *Server) RoundTrip(req *http.Request) (*http.Response, error) {
 		if !ok {
 			return nil, net.ErrClosed
 		}
+
 		return respAndErr.resp, respAndErr.err
 	case <-req.Context().Done():
 		return nil, nil
@@ -179,6 +192,7 @@ func (s *Server) readWebSocket() {
 				continue
 			}
 			resp, err := http.ReadResponse(bufio.NewReader(rdr), respItem.req)
+			readBody(resp)
 			s.respondToRequest(respItem.req, resp, err)
 		case websocket.CloseMessage:
 			close(s.stop)
