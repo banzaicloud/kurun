@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -269,4 +270,59 @@ func TestMultipleWSConnection(t *testing.T) {
 	}
 	client2 := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl2), WithTLSTarget())
 	require.NoError(t, client2.Start(context.Background()))
+}
+
+func TestTunnelBigResponse(t *testing.T) {
+	loadTLSConfig(t)
+
+	const datasize = 50 * 1024 * 1024
+
+	server := NewServer(
+		WithUpgrader(websocket.Upgrader{
+			CheckOrigin:      func(r *http.Request) bool { return true },
+			HandshakeTimeout: 15 * time.Second,
+		}),
+	)
+	require.NotNil(t, server)
+	wsSrv := &http.Server{Addr: "localhost:10080", Handler: server}
+	go wsSrv.ListenAndServe()
+	defer wsSrv.Shutdown(context.Background())
+
+	srv := http.Server{
+		Addr:      "localhost:10081",
+		Handler:   tunnel.RequestHandler{RoundTripper: server},
+		TLSConfig: tlsConfig.Clone(),
+	}
+	go srv.ListenAndServeTLS("", "")
+	defer srv.Shutdown(context.Background())
+
+	clcl := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	client := NewClient("ws://localhost:10080", "localhost:10082", WithHTTPClient(&clcl), WithTLSTarget())
+	require.NoError(t, client.Start(context.Background()))
+
+	bck := http.Server{
+		Addr: "localhost:10082",
+		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.Write([]byte(strings.Repeat("A", datasize)))
+		}),
+		TLSConfig: tlsConfig.Clone(),
+	}
+	go bck.ListenAndServeTLS("", "")
+	defer bck.Shutdown(context.Background())
+
+	cl := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig.Clone(),
+		},
+	}
+	resp, err := cl.Get("https://localhost:10081/")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	dat, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, datasize, len(dat))
 }
