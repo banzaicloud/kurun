@@ -11,4 +11,4 @@ CA=$(kubectl config view --raw -o json | jq -r '.clusters[0].cluster["certificat
 
 # curl -v "$APISERVER/api/v1/namespaces/default/pods/tunnel:80/proxy/log-generator/state" --cert <(echo "$CERT") --key <(echo "$KEY") --cacert <(echo "$CA")
 
-# curl -v "$APISERVER/api/v1/namespaces/default/services/tunnel-service:443/proxy/log-generator/state" --cert <(echo "$CERT") --key <(echo "$KEY") --cacert <(echo "$CA")
+curl -v "$APISERVER/api/v1/namespaces/default/services/https:tunnel-service:443/proxy/$1" --cert <(echo "$CERT") --key <(echo "$KEY") --cacert <(echo "$CA")

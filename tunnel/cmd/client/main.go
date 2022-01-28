@@ -5,56 +5,64 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net/http"
+	"strings"
 
 	tunnelws "github.com/banzaicloud/kurun/tunnel/websocket"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
-
-const (
-	CertFile = "../../localhost+2.pem"
-	KeyFile  = "../../localhost+2-key.pem"
-	CAFile   = "../../rootCA.pem"
-)
-
-func loadTLSConfig(certFile string, keyFile string, CAFile string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-	caBytes, err := ioutil.ReadFile(CAFile)
-	if err != nil {
-		return nil, err
-	}
-	certPool := x509.NewCertPool()
-	if !certPool.AppendCertsFromPEM(caBytes) {
-		return nil, fmt.Errorf("unable to append CA")
-	}
-	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      certPool,
-	}
-	return tlsCfg, nil
-}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// tlsConfig, err := loadTLSConfig(CertFile, KeyFile, CAFile)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// httpClient := &http.Client{
-	// 	Transport: &http.Transport{
-	// 		TLSClientConfig: tlsConfig,
-	// 	},
-	// }
+	restCfg := config.GetConfigOrDie()
+	tlsCfg, err := rest.TLSConfigFor(restCfg)
+	if err != nil {
+		panic(err)
+	}
 
-	httpClient := &http.Client{}
+	c, err := client.New(restCfg, client.Options{})
+	if err != nil {
+		panic(err)
+	}
 
-	client := tunnelws.NewClient("ws://localhost:10080", "localhost:8000", tunnelws.WithHTTPClient(httpClient))
-	// client := tunnelws.NewClient("ws://localhost:10080", "localhost:8000", tunnelws.WithHTTPClient(httpClient), tunnelws.WithTLSTarget())
-	if err := client.Start(context.Background()); err != nil {
+	var secret v1.Secret
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "tunnel-secret"}, &secret); err != nil {
+		panic(err)
+	}
+
+	caBytes, ok := secret.Data["ca.crt"]
+	if !ok {
+		panic("no ca cert found in secret")
+	}
+
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(caBytes) {
+		panic("unable to append CA")
+	}
+	tlsConfig := &tls.Config{
+		RootCAs: certPool,
+	}
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+
+	// httpClient := &http.Client{}
+	// uri := "ws://localhost:80"
+
+	uri := fmt.Sprintf("%v/%v:%v/proxy/%v", restCfg.Host, "api/v1/namespaces/default/pods/https:tunnel", 80, "")
+	uri = strings.Replace(uri, "https://", "wss://", 1)
+	fmt.Println("proxy url:", uri)
+
+	// tunnelClient := tunnelws.NewClient(uri, "localhost:8000", tunnelws.WithHTTPClient(httpClient))
+	tunnelClient := tunnelws.NewClient(uri, "localhost:8000", tunnelws.WithHTTPClient(httpClient), tunnelws.WithTLSTarget(), tunnelws.WithServerTLS(tlsCfg))
+	if err := tunnelClient.Start(context.Background()); err != nil {
 		fmt.Println(err)
 		cancel()
 	}

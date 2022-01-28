@@ -3,6 +3,7 @@ package websocket
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -46,6 +47,12 @@ func WithTLSTarget() ClientOption {
 	})
 }
 
+func WithServerTLS(tlsCfg *tls.Config) ClientOption {
+	return ClientOption(func(c *Client) {
+		c.serverTLS = tlsCfg
+	})
+}
+
 type Client struct {
 	serverAddr   string
 	targetHost   string
@@ -56,6 +63,7 @@ type Client struct {
 	pingTicker   *time.Ticker
 	wsConn       *websocket.Conn
 	respCh       chan responseItem
+	serverTLS    *tls.Config
 }
 
 type responseItem struct {
@@ -71,7 +79,16 @@ func (c *Client) Start(ctx context.Context) (err error) {
 }
 
 func (c *Client) start(ctx context.Context) error {
-	wsConn, _, err := websocket.DefaultDialer.DialContext(ctx, c.serverAddr, nil)
+	var myDialer = &websocket.Dialer{
+		// Proxy: func(r *http.Request) (*url.URL, error) {
+		// 	uri := fmt.Sprintf("%v/%v:%v/proxy/%v", c.restCfg.Host, "api/v1/namespaces/default/pods/tunnel", 80, r.URL.Path)
+		// 	log.Println("proxy url:", uri)
+		// 	return url.Parse(uri)
+		// },
+		HandshakeTimeout: 45 * time.Second,
+		TLSClientConfig:  c.serverTLS,
+	}
+	wsConn, _, err := myDialer.DialContext(ctx, c.serverAddr, nil)
 	if err != nil {
 		return err
 	}

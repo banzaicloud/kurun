@@ -55,6 +55,8 @@ func main() {
 		tunnelws.WithUpgrader(websocket.Upgrader{
 			CheckOrigin:      func(r *http.Request) bool { return true },
 			HandshakeTimeout: 15 * time.Second,
+			ReadBufferSize:   0xFFFF,
+			WriteBufferSize:  0xFFFF,
 		}),
 	)
 
@@ -64,8 +66,15 @@ func main() {
 		TLSConfig: tlsCfg.Clone(),
 	}
 
-	wsSrv := &http.Server{Addr: ":80", Handler: server}
-	go wsSrv.ListenAndServe()
+	wsSrv := &http.Server{
+		Addr:      ":80",
+		Handler:   server,
+		TLSConfig: tlsCfg.Clone(),
+	}
+
+	go wsSrv.ListenAndServeTLS("", "")
+	// go wsSrv.ListenAndServe()
 
 	srv.ListenAndServeTLS("", "")
+	// srv.ListenAndServe()
 }
