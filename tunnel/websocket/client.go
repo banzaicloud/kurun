@@ -49,12 +49,13 @@ func WithTLSTarget() ClientOption {
 
 func WithServerTLS(tlsCfg *tls.Config) ClientOption {
 	return ClientOption(func(c *Client) {
-		c.serverTLS = tlsCfg
+		c.dialer().TLSClientConfig = tlsCfg
 	})
 }
 
 type Client struct {
 	serverAddr   string
+	serverDialer *websocket.Dialer
 	targetHost   string
 	targetTLS    bool
 	httpClient   *http.Client
@@ -63,7 +64,6 @@ type Client struct {
 	pingTicker   *time.Ticker
 	wsConn       *websocket.Conn
 	respCh       chan responseItem
-	serverTLS    *tls.Config
 }
 
 type responseItem struct {
@@ -79,16 +79,7 @@ func (c *Client) Start(ctx context.Context) (err error) {
 }
 
 func (c *Client) start(ctx context.Context) error {
-	var myDialer = &websocket.Dialer{
-		// Proxy: func(r *http.Request) (*url.URL, error) {
-		// 	uri := fmt.Sprintf("%v/%v:%v/proxy/%v", c.restCfg.Host, "api/v1/namespaces/default/pods/tunnel", 80, r.URL.Path)
-		// 	log.Println("proxy url:", uri)
-		// 	return url.Parse(uri)
-		// },
-		HandshakeTimeout: 45 * time.Second,
-		TLSClientConfig:  c.serverTLS,
-	}
-	wsConn, _, err := myDialer.DialContext(ctx, c.serverAddr, nil)
+	wsConn, _, err := c.dialer().DialContext(ctx, c.serverAddr, nil)
 	if err != nil {
 		return err
 	}
@@ -104,6 +95,16 @@ func (c *Client) start(ctx context.Context) error {
 	go c.processResponses(ctx)
 
 	return nil
+}
+
+func (c *Client) dialer() *websocket.Dialer {
+	if c.serverDialer == nil {
+		c.serverDialer = &websocket.Dialer{
+			Proxy:            http.ProxyFromEnvironment,
+			HandshakeTimeout: 45 * time.Second,
+		}
+	}
+	return c.serverDialer
 }
 
 func (c *Client) resetPingTicker() {
