@@ -1,11 +1,17 @@
 package websocket
 
 import (
+	"crypto"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"
+	"crypto/x509/pkix"
+	"math/big"
+	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -78,20 +84,74 @@ func (c *ConcurrencyCounter) update() {
 	}
 }
 
-var tlsConfig *tls.Config
+func generateTLSConfigs(t *testing.T) (serverCfg tls.Config, clientCfg tls.Config) {
+	dnsNames := []string{"localhost"}
+	ipAddrs := []net.IP{net.IPv4(127, 0, 0, 1), net.ParseIP("::")}
+	caCert, caKey, err := generateSelfSignedCA()
+	require.NoError(t, err)
+	cert, err := generateTLSCert(caCert, caKey, big.NewInt(1), dnsNames, ipAddrs)
+	require.NoError(t, err)
+	serverCfg.Certificates = append(serverCfg.Certificates, cert)
+	clientCfg.RootCAs = x509.NewCertPool()
+	clientCfg.RootCAs.AddCert(caCert)
+	return
+}
 
-func loadTLSConfig(t *testing.T) {
-	certFile := "../../localhost+2.pem"
-	keyFile := "../../localhost+2-key.pem"
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	require.NoError(t, err)
-	caBytes, err := ioutil.ReadFile("../../rootCA.pem")
-	require.NoError(t, err)
-	certPool := x509.NewCertPool()
-	require.True(t, certPool.AppendCertsFromPEM(caBytes))
-	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      certPool,
+func generateSelfSignedCA() (*x509.Certificate, crypto.PrivateKey, error) {
+	pubKey, prvKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
 	}
-	tlsConfig = tlsCfg
+	tmpl := &x509.Certificate{
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		NotAfter:              time.Now().Add(12 * time.Hour),
+		NotBefore:             time.Now(),
+		PublicKeyAlgorithm:    x509.Ed25519,
+		PublicKey:             pubKey,
+		SerialNumber:          big.NewInt(0),
+		Subject: pkix.Name{
+			CommonName: "Test CA",
+		},
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pubKey, prvKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	cert, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cert, prvKey, nil
+}
+
+func generateTLSCert(caCert *x509.Certificate, caKey crypto.PrivateKey, serial *big.Int, dnsNames []string, ipAddrs []net.IP) (cert tls.Certificate, err error) {
+	pubKey, prvKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return
+	}
+	tmpl := &x509.Certificate{
+		ExtKeyUsage:        []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:           dnsNames,
+		IPAddresses:        ipAddrs,
+		KeyUsage:           x509.KeyUsageDigitalSignature,
+		NotBefore:          time.Now(),
+		NotAfter:           time.Now().Add(12 * time.Hour),
+		PublicKeyAlgorithm: x509.Ed25519,
+		PublicKey:          pubKey,
+		SerialNumber:       serial,
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, pubKey, caKey)
+	if err != nil {
+		return
+	}
+	leaf, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		return
+	}
+	cert.Certificate = append(cert.Certificate, certBytes)
+	cert.Leaf = leaf
+	cert.PrivateKey = prvKey
+	return
 }

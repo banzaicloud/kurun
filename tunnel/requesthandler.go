@@ -5,6 +5,12 @@ import (
 	"net/http"
 )
 
+func NewRequestHandler(rt http.RoundTripper) *RequestHandler {
+	return &RequestHandler{
+		RoundTripper: rt,
+	}
+}
+
 type RequestHandler struct {
 	RoundTripper http.RoundTripper
 }
