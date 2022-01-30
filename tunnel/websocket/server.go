@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -15,16 +14,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-func readBody(resp *http.Response) {
-	b, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("response body size:", len(b))
-	resp.Body = io.NopCloser(bytes.NewReader(b))
-}
 
 func NewServer(options ...ServerOption) *Server {
 	s := &Server{
@@ -191,8 +180,13 @@ func (s *Server) readWebSocket() {
 				// TODO: log missing response
 				continue
 			}
-			resp, err := http.ReadResponse(bufio.NewReader(rdr), respItem.req)
-			readBody(resp)
+			// read all data before a new reader is created for the connection and the current reader is invalidated
+			respBytes, err := io.ReadAll(rdr)
+			if err != nil {
+				s.respondToRequest(respItem.req, nil, err)
+				continue
+			}
+			resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(respBytes)), respItem.req)
 			s.respondToRequest(respItem.req, resp, err)
 		case websocket.CloseMessage:
 			close(s.stop)
