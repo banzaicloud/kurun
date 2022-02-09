@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eou pipefail   
+set -eou pipefail
 
 [[ $# -lt 1 ]] && echo "Usage: kurun gofiles... [arguments...]" && exit 1
 
