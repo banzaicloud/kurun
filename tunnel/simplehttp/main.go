@@ -12,50 +12,48 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
-type Params struct {
-	cert string
-	key  string
-	ca   string
-}
-
 func main() {
-	restCfg := config.GetConfigOrDie()
-
-	c, err := client.New(restCfg, client.Options{})
-	if err != nil {
-		panic(err)
-	}
-
-	var secret v1.Secret
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "tunnel-secret"}, &secret); err != nil {
-		panic(err)
-	}
-
-	certBytes, ok := secret.Data["tls.crt"]
-	if !ok {
-		panic("no cert found in secret")
-	}
-	keyBytes, ok := secret.Data["tls.key"]
-	if !ok {
-		panic("no key cert found in secret")
-	}
-
-	tlsCert, err := tls.X509KeyPair(certBytes, keyBytes)
-	if err != nil {
-		panic(err)
-	}
-
 	httpServer := http.Server{
 		Addr: ":8000",
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{tlsCert},
-		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			log.Println("request received:", r.URL)
 			http.FileServer(http.Dir(".")).ServeHTTP(w, r)
 		}),
 	}
+	if false {
+		restCfg := config.GetConfigOrDie()
 
-	log.Fatal(httpServer.ListenAndServeTLS("", ""))
+		c, err := client.New(restCfg, client.Options{})
+		if err != nil {
+			panic(err)
+		}
 
+		var secret v1.Secret
+		if err := c.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "tunnel-secret"}, &secret); err != nil {
+			panic(err)
+		}
+
+		certBytes, ok := secret.Data["tls.crt"]
+		if !ok {
+			panic("no cert found in secret")
+		}
+		keyBytes, ok := secret.Data["tls.key"]
+		if !ok {
+			panic("no key cert found in secret")
+		}
+
+		tlsCert, err := tls.X509KeyPair(certBytes, keyBytes)
+		if err != nil {
+			panic(err)
+		}
+		httpServer.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+		}
+	}
+
+	if httpServer.TLSConfig == nil {
+		log.Fatal(httpServer.ListenAndServe())
+	} else {
+		log.Fatal(httpServer.ListenAndServeTLS("", ""))
+	}
 }

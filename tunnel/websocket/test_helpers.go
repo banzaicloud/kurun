@@ -1,18 +1,16 @@
 package websocket
 
 import (
-	"crypto"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
+	"io"
 	"math/big"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
-	"time"
 
+	"github.com/banzaicloud/kurun/tunnel/pkg/tlstools"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,9 +85,9 @@ func (c *ConcurrencyCounter) update() {
 func generateTLSConfigs(t *testing.T) (serverCfg tls.Config, clientCfg tls.Config) {
 	dnsNames := []string{"localhost"}
 	ipAddrs := []net.IP{net.IPv4(127, 0, 0, 1), net.ParseIP("::")}
-	caCert, caKey, err := generateSelfSignedCA()
+	caCert, caKey, err := tlstools.GenerateSelfSignedCA()
 	require.NoError(t, err)
-	cert, err := generateTLSCert(caCert, caKey, big.NewInt(1), dnsNames, ipAddrs)
+	cert, err := tlstools.GenerateTLSCert(caCert, caKey, big.NewInt(1), dnsNames, ipAddrs)
 	require.NoError(t, err)
 	serverCfg.Certificates = append(serverCfg.Certificates, cert)
 	clientCfg.RootCAs = x509.NewCertPool()
@@ -97,61 +95,83 @@ func generateTLSConfigs(t *testing.T) (serverCfg tls.Config, clientCfg tls.Confi
 	return
 }
 
-func generateSelfSignedCA() (*x509.Certificate, crypto.PrivateKey, error) {
-	pubKey, prvKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	tmpl := &x509.Certificate{
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		NotAfter:              time.Now().Add(12 * time.Hour),
-		NotBefore:             time.Now(),
-		PublicKeyAlgorithm:    x509.Ed25519,
-		PublicKey:             pubKey,
-		SerialNumber:          big.NewInt(0),
-		Subject: pkix.Name{
-			CommonName: "Test CA",
-		},
-	}
-	certBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pubKey, prvKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	cert, err := x509.ParseCertificate(certBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	return cert, prvKey, nil
+func compareRequests(t *testing.T, orig, recv *http.Request) {
+	t.Helper()
+	require.NotNil(t, orig)
+	require.NotNil(t, recv)
+	require.Equal(t, orig.Method, recv.Method)
+	require.Equal(t, orig.URL.Path, recv.URL.Path)
+	require.Equal(t, orig.Proto, recv.Proto)
+	require.Equal(t, orig.ProtoMajor, recv.ProtoMajor)
+	require.Equal(t, orig.ProtoMinor, recv.ProtoMinor)
+	requireHeaderSubset(t, orig.Header, recv.Header)
+	requireReaderContentEqual(t, getRequestBody(t, orig), getRequestBody(t, recv))
 }
 
-func generateTLSCert(caCert *x509.Certificate, caKey crypto.PrivateKey, serial *big.Int, dnsNames []string, ipAddrs []net.IP) (cert tls.Certificate, err error) {
-	pubKey, prvKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return
+func compareResponses(t *testing.T, orig, recv *http.Response) {
+	t.Helper()
+	require.NotNil(t, orig)
+	require.NotNil(t, recv)
+	if orig.Status != "" {
+		require.Equal(t, orig.Status, recv.Status)
 	}
-	tmpl := &x509.Certificate{
-		ExtKeyUsage:        []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:           dnsNames,
-		IPAddresses:        ipAddrs,
-		KeyUsage:           x509.KeyUsageDigitalSignature,
-		NotBefore:          time.Now(),
-		NotAfter:           time.Now().Add(12 * time.Hour),
-		PublicKeyAlgorithm: x509.Ed25519,
-		PublicKey:          pubKey,
-		SerialNumber:       serial,
+	require.Equal(t, orig.StatusCode, recv.StatusCode)
+	require.Equal(t, orig.Proto, recv.Proto)
+	require.Equal(t, orig.ProtoMajor, recv.ProtoMajor)
+	require.Equal(t, orig.ProtoMinor, recv.ProtoMinor)
+	requireHeaderSubset(t, orig.Header, recv.Header)
+	requireReaderContentEqual(t, orig.Body, recv.Body)
+}
+
+func requireHeaderSubset(t *testing.T, expected, actual http.Header, msgAndArgs ...interface{}) {
+	t.Helper()
+	for k, vs := range expected {
+		require.Contains(t, actual, k, msgAndArgs...)
+		require.Subset(t, actual.Values(k), vs, msgAndArgs...)
 	}
-	certBytes, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, pubKey, caKey)
-	if err != nil {
-		return
+}
+
+func requireReaderContentEqual(t *testing.T, expected, actual io.Reader, msgAndArgs ...interface{}) {
+	t.Helper()
+	if expected == nil {
+		if actual != nil {
+			bs, err := io.ReadAll(actual)
+			require.NoError(t, err)
+			require.Len(t, bs, 0, msgAndArgs...)
+		}
+	} else {
+		if seeker, ok := expected.(io.Seeker); ok {
+			seeker.Seek(0, io.SeekStart)
+		}
+		require.NotNil(t, actual, msgAndArgs...)
+		expectedBytes, err := io.ReadAll(expected)
+		require.NoError(t, err)
+		actualBytes, err := io.ReadAll(actual)
+		require.NoError(t, err)
+		require.Equal(t, expectedBytes, actualBytes, msgAndArgs...)
 	}
-	leaf, err := x509.ParseCertificate(certBytes)
-	if err != nil {
-		return
+}
+
+func getRequestBody(t *testing.T, r *http.Request) io.ReadCloser {
+	t.Helper()
+	if r.GetBody != nil {
+		b, err := r.GetBody()
+		require.NoError(t, err)
+		return b
 	}
-	cert.Certificate = append(cert.Certificate, certBytes)
-	cert.Leaf = leaf
-	cert.PrivateKey = prvKey
-	return
+	return r.Body
+}
+
+func NopReadSeekCloser(rs io.ReadSeeker) nopReadSeekCloser {
+	return nopReadSeekCloser{
+		ReadSeeker: rs,
+	}
+}
+
+type nopReadSeekCloser struct {
+	io.ReadSeeker
+}
+
+func (nopReadSeekCloser) Close() error {
+	return nil
 }
