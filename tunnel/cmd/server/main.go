@@ -2,43 +2,54 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"log"
+	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 
 	"emperror.dev/errors"
+	"github.com/go-logr/stdr"
 	"github.com/spf13/pflag"
 
 	"github.com/banzaicloud/kurun/tunnel"
+	"github.com/banzaicloud/kurun/tunnel/pkg/tlstools"
 	tunnelws "github.com/banzaicloud/kurun/tunnel/websocket"
 )
 
 type Params struct {
-	controlServerAddress  string
-	controlServerCertFile string
-	controlServerKeyFile  string
-	requestServerAddress  string
-	requestServerCertFile string
-	requestServerKeyFile  string
+	controlServerAddress    string
+	controlServerSelfSigned bool
+	controlServerCertFile   string
+	controlServerKeyFile    string
+	requestServerAddress    string
+	requestServerCertFile   string
+	requestServerKeyFile    string
+	logVerbosity            int
 }
 
 func run() error {
 	params := Params{}
 
 	pflag.StringVar(&params.controlServerAddress, "ctrl-srv-addr", ":10080", "control server address")
+	pflag.BoolVar(&params.controlServerSelfSigned, "ctrl-srv-self-signed", false, "generate self-signed TLS certificate for control server")
 	pflag.StringVar(&params.controlServerCertFile, "ctrl-srv-cert", "", "path of the control server TLS certificate file")
 	pflag.StringVar(&params.controlServerKeyFile, "ctrl-srv-key", "", "path of the control server TLS private key file")
 	pflag.StringVar(&params.requestServerAddress, "req-srv-addr", ":80", "control server address")
 	pflag.StringVar(&params.requestServerCertFile, "req-srv-cert", "", "path of the request server TLS certificate file")
 	pflag.StringVar(&params.requestServerKeyFile, "req-srv-key", "", "path of the request server TLS private key file")
+	pflag.CountVarP(&params.logVerbosity, "verbose", "v", "logging verbosity")
 	pflag.Parse()
 
 	// check params
 
 	controlServerCertSet := params.controlServerCertFile != ""
 	controlServerKeySet := params.controlServerKeyFile != ""
-	controlServerTLS := controlServerCertSet && controlServerKeySet
+	controlServerTLSFromFiles := controlServerCertSet && controlServerKeySet
+	controlServerTLS := controlServerTLSFromFiles || params.controlServerSelfSigned
 
 	if controlServerCertSet != controlServerKeySet {
 		specified, notSpecified := "ctrl-srv-cert", "ctrl-srv-key"
@@ -46,6 +57,10 @@ func run() error {
 			specified, notSpecified = notSpecified, specified
 		}
 		return errors.Errorf("if %s is specified %s must be specified too", specified, notSpecified)
+	}
+
+	if controlServerTLSFromFiles && params.controlServerSelfSigned {
+		return errors.New("either ctrl-srv-self-signed or ctrl-srv-cert and ctrl-srv-key can be specified")
 	}
 
 	requestServerCertSet := params.requestServerCertFile != ""
@@ -62,11 +77,39 @@ func run() error {
 
 	// start servers
 
-	tunnelServer := tunnelws.NewServer()
+	stdr.SetVerbosity(params.logVerbosity)
+	logger := stdr.New(log.New(os.Stdout, "", log.LstdFlags|log.LUTC))
+
+	tunnelServer := tunnelws.NewServer(tunnelws.WithLogger(logger))
 
 	controlServer := &http.Server{
 		Addr:    params.controlServerAddress,
 		Handler: tunnelServer,
+	}
+
+	if controlServerTLS {
+		certs := []tls.Certificate{}
+		if controlServerTLSFromFiles {
+			cert, err := tls.LoadX509KeyPair(params.controlServerCertFile, params.controlServerKeyFile)
+			if err != nil {
+				return err
+			}
+			certs = append(certs, cert)
+		}
+		if params.controlServerSelfSigned {
+			caCert, caKey, err := tlstools.GenerateSelfSignedCA()
+			if err != nil {
+				return err
+			}
+			cert, err := tlstools.GenerateTLSCert(caCert, caKey, big.NewInt(1), []string{"localhost"}, []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::")})
+			if err != nil {
+				return err
+			}
+			certs = append(certs, cert)
+		}
+		controlServer.TLSConfig = &tls.Config{
+			Certificates: certs,
+		}
 	}
 
 	controlServerErr := make(chan error, 1)
@@ -75,7 +118,7 @@ func run() error {
 
 		var err error
 		if controlServerTLS {
-			err = controlServer.ListenAndServeTLS(params.controlServerCertFile, params.controlServerKeyFile)
+			err = controlServer.ListenAndServeTLS("", "")
 		} else {
 			err = controlServer.ListenAndServe()
 		}
