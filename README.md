@@ -72,9 +72,9 @@ EOF
 
 ### `kurun` is like `go run` to Kubernetes
 
-The `go run` command is a convenient CLI subcommand for executing `Golang` code during the development phase. A lot of our applications are making calls to the Kubernetes API and we needed a quick utility to execute the **Go code inside Kubernetes** very quickly. That's why we have written `kurun`, a dirty little bash utility, to execute Go code inside Kubernetes with a oneliner: 
+The `go run` command is a convenient CLI subcommand for executing `Golang` code during the development phase. A lot of our applications are making calls to the Kubernetes API and we needed a quick utility to execute the **Go code inside Kubernetes** very quickly. That's why we have written `kurun`, a dirty little bash utility, to execute Go code inside Kubernetes with a oneliner:
 
-`kurun run main.go` 
+`kurun run main.go`
 
 It's that easy.
 
