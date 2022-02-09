@@ -4,6 +4,8 @@ go 1.17
 
 require (
 	emperror.dev/errors v0.8.0
+	github.com/go-logr/logr v1.2.2
+	github.com/go-logr/stdr v1.2.2
 	github.com/gorilla/websocket v1.4.2
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.0
@@ -16,7 +18,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
-	github.com/go-logr/logr v1.2.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
