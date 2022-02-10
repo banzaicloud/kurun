@@ -51,7 +51,7 @@ jobs:
           TAG_OR_BRANCH: ${{ steps.refortag.outputs.value }}
       - name: Path from tag
         id: pathfromtag
-        run: echo "::set-output name=value::$(echo $TAG | sed -E 's/^(v[0-9]+\.[0-9]+).*/\1/')"
+        run: echo "::set-output name=value::$(echo $TAG | sed -E 's/^(v[0-9]+\.v[0-9]+\.[0-9]+).*/\1/')"
         env:
           TAG: ${{ steps.imagetag.outputs.value }}
       - name: Build Server
