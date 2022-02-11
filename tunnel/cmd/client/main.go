@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/banzaicloud/kurun/tunnel"
 	tunnelws "github.com/banzaicloud/kurun/tunnel/websocket"
+	"github.com/go-logr/stdr"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
@@ -31,14 +33,14 @@ func main() {
 		port        string
 		serviceName string
 		tlsSecret   string
-		verbose     bool
+		verbosity   int
 	)
 	pflag.StringVarP(&namespace, "namespace", "n", "default", "resource namespace")
 	pflag.StringVar(&podName, "pod", "", "reference to the K8s pod to connect to")
 	pflag.StringVarP(&port, "port", "p", "", "port to connect to")
 	pflag.StringVar(&serviceName, "service", "", "reference to the K8s service to connect to")
 	pflag.StringVar(&tlsSecret, "tlssecret", "", "reference to a K8s secret containing TLS CA cert")
-	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
+	pflag.CountVarP(&verbosity, "verbose", "v", "logging verbosity")
 	pflag.Parse()
 
 	if pflag.NArg() < 1 {
@@ -75,6 +77,9 @@ func main() {
 		resources, resource = "services", serviceName
 	}
 
+	stdr.SetVerbosity(verbosity)
+	logger := stdr.New(log.New(os.Stdout, "", log.LstdFlags|log.LUTC))
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 
@@ -85,7 +90,7 @@ func main() {
 		select {
 		case <-signals:
 			cancel()
-			fmt.Fprintln(os.Stdout, "client interrupted, terminating")
+			logger.Info("client interrupted, terminating")
 		case <-ctx.Done():
 		}
 	}()
@@ -153,11 +158,9 @@ func main() {
 	proxyURL.Scheme = "wss"
 
 	proxyURL.Path = fmt.Sprintf("/api/v1/namespaces/%s/%s/https:%s:%s/proxy/", namespace, resources, resource, port)
-	if verbose {
-		fmt.Fprintln(os.Stdout, "proxy url:", proxyURL.String())
-	}
+	logger.V(1).Info("generated API server proxy URL", "url", proxyURL.String())
 
-	tunnelClientCfg := tunnelws.NewClientConfig(proxyURL.String(), transport, tunnelws.WithDialerCtor(func() *websocket.Dialer {
+	tunnelClientCfg := tunnelws.NewClientConfig(proxyURL.String(), transport, tunnelws.WithLogger(logger), tunnelws.WithDialerCtor(func() *websocket.Dialer {
 		return &websocket.Dialer{
 			TLSClientConfig: tlsCfg.Clone(),
 		}

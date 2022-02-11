@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/banzaicloud/kurun/tunnel"
 	tunnelws "github.com/banzaicloud/kurun/tunnel/websocket"
+	"github.com/go-logr/stdr"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
@@ -52,6 +54,7 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			namespace := rootParams.namespace
+			verbosity := rootParams.verbosity
 
 			controlPort := corev1.ContainerPort{
 				Name:          "control",
@@ -79,6 +82,9 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 					downstreamURL.Scheme = "https"
 				}
 			}
+
+			stdr.SetVerbosity(verbosity)
+			logger := stdr.New(log.New(os.Stdout, "", log.LstdFlags|log.LUTC))
 
 			cmdCtx, cancelCmdCtx := context.WithCancel(cmd.Context())
 			defer cancelCmdCtx()
@@ -170,7 +176,7 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 			defer func() {
 				if kurunServiceCreated {
 					if err := kubeClient.Delete(context.TODO(), kurunService); err != nil {
-						fmt.Fprintln(os.Stderr, "failed to delete service", err.Error())
+						logger.Error(err, "failed to delete service")
 					}
 				}
 			}()
@@ -264,7 +270,7 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 
 			defer func() {
 				if err := kubeClient.Delete(context.Background(), deployment); err != nil {
-					fmt.Fprintln(os.Stderr, "failed to delete deployment", err.Error())
+					logger.Error(err, "failed to delete deployment")
 				}
 			}()
 
@@ -305,14 +311,19 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 				return baseTransport.RoundTrip(r)
 			})
 
-			tunnelClientCfg := tunnelws.NewClientConfig(proxyURL.String(), transport, tunnelws.WithDialerCtor(func() *websocket.Dialer {
-				return &websocket.Dialer{
-					TLSClientConfig: proxyTLSCfg.Clone(),
-				}
-			}))
+			tunnelClientCfg := tunnelws.NewClientConfig(
+				proxyURL.String(),
+				transport,
+				tunnelws.WithLogger(logger),
+				tunnelws.WithDialerCtor(func() *websocket.Dialer {
+					return &websocket.Dialer{
+						TLSClientConfig: proxyTLSCfg.Clone(),
+					}
+				}),
+			)
 			go func() {
 				if err := tunnelws.RunClient(cmdCtx, *tunnelClientCfg); err != nil {
-					fmt.Fprintln(os.Stderr, "tunnel client exited with error:", err)
+					logger.Error(err, "tunnel client exited with error")
 				}
 				cancelCmdCtx()
 			}()

@@ -10,6 +10,7 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVar(&params.namespace, "namespace", "default", "namespace to use for resources")
+	cmd.PersistentFlags().CountVarP(&params.verbosity, "verbose", "v", "logging verbosity")
 
 	cmd.AddCommand(
 		NewApplyCommand(),
@@ -22,4 +23,5 @@ func NewRootCommand() *cobra.Command {
 
 type rootCommandParams struct {
 	namespace string
+	verbosity int
 }
