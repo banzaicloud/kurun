@@ -26,7 +26,7 @@ func NewClientConfig(serverAddr string, roundTripper http.RoundTripper, options 
 	}
 	for _, opt := range options {
 		if opt != nil {
-			opt(c)
+			opt.ApplyToClientConfig(c)
 		}
 	}
 	return c
@@ -40,10 +40,18 @@ type ClientConfig struct {
 	serverAddr   string
 }
 
-type ClientConfigOption func(cfg *ClientConfig)
+type ClientConfigOption interface {
+	ApplyToClientConfig(*ClientConfig)
+}
+
+type ClientConfigOptionFunc func(cfg *ClientConfig)
+
+func (opt ClientConfigOptionFunc) ApplyToClientConfig(c *ClientConfig) {
+	opt(c)
+}
 
 func WithDialerCtor(dialerCtor func() *websocket.Dialer) ClientConfigOption {
-	return ClientConfigOption(func(cfg *ClientConfig) {
+	return ClientConfigOptionFunc(func(cfg *ClientConfig) {
 		cfg.dialerCtor = dialerCtor
 	})
 }

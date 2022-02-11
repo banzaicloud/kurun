@@ -30,7 +30,7 @@ func NewServer(options ...ServerOption) *Server {
 		if option == nil {
 			continue
 		}
-		option(s)
+		option.ApplyToServer(s)
 	}
 	return s
 }
@@ -281,17 +281,19 @@ func (c *conn) writeLoop() {
 	}
 }
 
-type ServerOption func(*Server)
-
-func WithUpgrader(upgrader websocket.Upgrader) ServerOption {
-	return ServerOption(func(s *Server) {
-		s.upgrader = upgrader
-	})
+type ServerOption interface {
+	ApplyToServer(*Server)
 }
 
-func WithLogger(logger logr.Logger) ServerOption {
-	return ServerOption(func(s *Server) {
-		s.logger = logger.WithValues("server", s)
+type ServerOptionFunc func(*Server)
+
+func (opt ServerOptionFunc) ApplyToServer(s *Server) {
+	opt(s)
+}
+
+func WithUpgrader(upgrader websocket.Upgrader) ServerOption {
+	return ServerOptionFunc(func(s *Server) {
+		s.upgrader = upgrader
 	})
 }
 

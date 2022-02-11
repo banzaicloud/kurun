@@ -6,7 +6,18 @@ import (
 	"unsafe"
 
 	"emperror.dev/errors"
+	"github.com/go-logr/logr"
 )
+
+type WithLogger logr.Logger
+
+func (opt WithLogger) ApplyToClientConfig(c *ClientConfig) {
+	c.logger = logr.Logger(opt)
+}
+
+func (opt WithLogger) ApplyToServer(s *Server) {
+	s.logger = logr.Logger(opt).WithValues("server", s)
+}
 
 func isTemporaryError(err error) bool {
 	if e := new(net.Error); errors.As(err, e) {

@@ -3,10 +3,12 @@ module github.com/banzaicloud/kurun
 go 1.17
 
 require (
+	emperror.dev/errors v0.8.0
 	github.com/banzaicloud/kurun/tunnel v0.0.0
-	github.com/ghodss/yaml v1.0.0
+	github.com/go-logr/stdr v1.2.2
 	github.com/gorilla/websocket v1.4.2
 	github.com/spf13/cobra v1.3.0
+	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.23.3
 	k8s.io/apimachinery v0.23.3
 	k8s.io/client-go v0.23.3
@@ -17,7 +19,6 @@ replace github.com/banzaicloud/kurun/tunnel => ./tunnel
 
 require (
 	cloud.google.com/go/compute v1.2.0 // indirect
-	emperror.dev/errors v0.8.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest v0.11.24 // indirect
 	github.com/Azure/go-autorest/autorest/adal v0.9.18 // indirect
@@ -55,7 +56,6 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	k8s.io/klog/v2 v2.40.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220124234850-424119656bbf // indirect
