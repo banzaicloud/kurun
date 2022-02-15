@@ -1,7 +1,7 @@
 # kurun
 
 - Just like `go run main.go` but executed inside Kubernetes with one command.
-- Just like `kubectl port-forward ...` just the other way around!
+- Just like `kubectl port-forward ...` but the other way around!
 - Just like `kubectl apply -f pod.yaml` but images are built from local source code.
 
 ### Synopsis
@@ -13,7 +13,7 @@ Usage:
 Available Commands:
   apply        Just like `kubectl apply -f pod.yaml` but images are built from local source code.
   help         Help about any command
-  port-forward Just like `kubectl port-forward ...`, just the other way around!
+  port-forward Just like `kubectl port-forward ...` but the other way around!
   run          Just like `go run main.go` but executed inside Kubernetes with one command.
 
 Flags:
@@ -29,7 +29,6 @@ Use "kurun [command] --help" for more information about a command.
 	- Docker for Mac Edge with Kubernetes enabled
 	- Minikube with the Registry addon enabled
 - kubectl
-- [inlets CLI](https://github.com/alexellis/inlets#install-the-cli) (for `port-forward` only)
 
 ### Installation
 
@@ -139,7 +138,7 @@ List of Kubernetes nodes:
 
 ### `kurun` is like `kubectl port-forward` into Kubernetes (and not out from!)
 
-`kurun` is capable of port forwarding your local application into a Kubernetes cluster with the help of a few tricks, it uses [inlets](https://github.com/alexellis/inlets) and `kubectl port-forward` to achieve this. This is extremely useful for rapid development of Kubernetes admission webhooks for example.
+`kurun` is capable of port forwarding your local application into a Kubernetes cluster using our WebSocket-based tunnel. This is extremely useful for rapid development of Kubernetes admission webhooks for example.
 
 Start a Python SimpleHTTPServer on port 4443 on your machine:
 
@@ -153,7 +152,7 @@ In another terminal session proxy this application into Kubernetes under the Ser
 kurun port-forward --servicename python-server localhost:4443
 ```
 
-In a third terminal session proxy this application into Kubernetes under the Service name `python-server`:
+In a third terminal session start up an Alpine Linux image in interactive mode and query the `python-server` service using `curl`:
 
 ```bash
 kubectl run alpine --rm --image alpine -it
@@ -202,11 +201,11 @@ kurun port-forward --servicename pipeline https://localhost:9090
 
 The above will end up as a plaintext service inside Kubernetes.
 
-If you need TLS there as well you have to provide the TLS type Kubernetes Secret name to `kurun`:
+If you need TLS there as well, you have to provide the TLS type Kubernetes Secret name to `kurun`:
 
 ```bash
-kubectl create secret tls pipeline-cert --cert "tls.crt" --key "tls.key"
-kurun port-forward --servicename pipeline https://localhost:9090 --tlssecret pipeline-cert
+kubectl create secret tls kurun-cert --cert "tls.crt" --key "tls.key"
+kurun port-forward --servicename kurun https://localhost:9090 --tlssecret kurun-cert
 ```
 
-For some more details and examples please read this [post](https://banzaicloud.com/blog/kurun).
+For more details and examples, please read this [post](https://banzaicloud.com/blog/kurun).
