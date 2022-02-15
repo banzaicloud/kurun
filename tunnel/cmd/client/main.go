@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -107,7 +108,7 @@ func main() {
 			Namespace: namespace,
 			Name:      tlsSecret,
 		}
-		if parts := strings.SplitN(tlsSecret, "/", 1); len(parts) > 1 {
+		if parts := strings.SplitN(tlsSecret, string(types.Separator), 2); len(parts) == 2 {
 			secretKey.Namespace, secretKey.Name = parts[0], parts[1]
 		}
 
