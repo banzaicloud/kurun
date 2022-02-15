@@ -67,19 +67,14 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 
 			downstream := args[0]
 			downstreamURL := &url.URL{
-				Host: downstream,
+				Scheme: "http",
+				Host:   downstream,
 			}
-			if strings.Contains(downstream, ":/") {
+			if strings.Contains(downstream, "://") {
 				var err error
 				downstreamURL, err = url.Parse(downstream)
 				if err != nil {
 					return errors.WithMessage(err, "failed to parse downstream URL")
-				}
-			}
-			if downstreamURL.Scheme == "" {
-				downstreamURL.Scheme = "http"
-				if tlsSecret != "" {
-					downstreamURL.Scheme = "https"
 				}
 			}
 
