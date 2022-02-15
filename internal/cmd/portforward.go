@@ -48,7 +48,7 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "port-forward [flags] upstream",
-		Short:   "Just like `kubectl port-forward ...`, just the other way around!",
+		Short:   "Just like `kubectl port-forward ...` but the other way around!",
 		Example: "kurun port-forward --namespace apps localhost:4443",
 		Args:    cobra.MinimumNArgs(1),
 
