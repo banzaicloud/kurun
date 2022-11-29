@@ -176,12 +176,35 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 				}
 			}()
 
+			serviceRequestPort := requestPort.Name
+
 			if !kurunServiceCreated {
+				serviceRequestPort = kurunService.Spec.Ports[0].Name
+
+				hasControlPortAlready := false
+				for _, port := range kurunService.Spec.Ports {
+					switch port.Name {
+					case "control":
+						hasControlPortAlready = true
+					}
+				}
+
+				if !hasControlPortAlready {
+					kurunService.Spec.Ports = append(kurunService.Spec.Ports, corev1.ServicePort{
+						Name: "control",
+						Port: controlPort.ContainerPort,
+					})
+
+					if err = kubeClient.Update(cmd.Context(), kurunService); err != nil {
+						return err
+					}
+				}
+
 				labelsMap = kurunService.Spec.Selector
 
 				for _, port := range kurunService.Spec.Ports {
 					switch port.Name {
-					case "request":
+					case serviceRequestPort:
 						setContainerPortFromServicePort(&requestPort, &port)
 					case "control":
 						setContainerPortFromServicePort(&controlPort, &port)
@@ -324,7 +347,7 @@ func NewPortForwardCommand(rootParams *rootCommandParams) *cobra.Command {
 			}()
 
 			fmt.Fprintf(os.Stdout, "Forwarding %s://%s.%s.svc:%d -> %s\n",
-				requestScheme, kurunService.Name, kurunService.Namespace, selectServicePort(kurunService, "request").Port,
+				requestScheme, kurunService.Name, kurunService.Namespace, selectServicePort(kurunService, serviceRequestPort).Port,
 				downstreamURL.String())
 
 			<-cmdCtx.Done()
