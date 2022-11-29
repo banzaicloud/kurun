@@ -38,5 +38,3 @@ brews:
         description: Run main.go in Kubernetes with one command
         test: |
             system "#{bin}/kurun --version"
-        dependencies:
-            - inlets
