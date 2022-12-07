@@ -35,7 +35,7 @@ jobs:
           password: ${{ secrets.CR_PAT }}
       - name: Determine image tag
         id: imagetag
-        run: echo "::set-output name=value::$(if [ $REF_TYPE = tag ]; then echo $REF_NAME | sed 's/server-//g'; elif [ $REF_NAME = master ]; then echo latest; else echo $REF_NAME; fi)"
+        run: echo "value=$(if [ $REF_TYPE = tag ]; then echo $REF_NAME | sed 's/server-//g'; elif [ $REF_NAME = master ]; then echo latest; else echo $REF_NAME; fi)" >> $GITHUB_OUTPUT
         env:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
