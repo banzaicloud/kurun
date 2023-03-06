@@ -81,6 +81,7 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 
 			if serviceAccount != "" {
 				kubectlArgs = append(kubectlArgs, fmt.Sprintf("--serviceaccount=%s", serviceAccount))
+				"--override-type=strategic",
 			}
 
 			for _, e := range podEnv {
