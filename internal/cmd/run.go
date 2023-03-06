@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -14,6 +15,7 @@ import (
 
 func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 	var serviceAccount string
+	var overrides string
 	var podEnv []string
 
 	cmd := &cobra.Command{
@@ -46,7 +48,18 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 
 			podName := strings.Split(image, ":")[0]
 
-			podOverride := map[string]interface{}{
+			kubectlArgs := []string{
+				"run", podName,
+				mode,
+				"--image=docker.io/library/" + image,
+				"--quiet",
+				"--image-pull-policy=IfNotPresent",
+				"--restart=Never",
+				"--rm",
+				"--override-type=strategic",
+			}
+
+			limitsPatch := map[string]interface{}{
 				"spec": corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -63,25 +76,31 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 				},
 			}
 
-			overrides, err := json.Marshal(podOverride)
+			limitsOverride, err := json.Marshal(limitsPatch)
 			if err != nil {
 				return err
 			}
 
-			kubectlArgs := []string{
-				"run", podName,
-				mode,
-				"--image=docker.io/library/" + image,
-				"--quiet",
-				"--image-pull-policy=IfNotPresent",
-				"--restart=Never",
-				"--rm",
-				"--overrides=" + string(overrides),
-			}
+			combinedOverride := limitsOverride
 
 			if serviceAccount != "" {
-				kubectlArgs = append(kubectlArgs, fmt.Sprintf("--serviceaccount=%s", serviceAccount))
+				serviceAccountPatch := fmt.Sprintf(`{"spec":{"serviceAccount":"%s"}}`, serviceAccount)
+				serviceAccountOverride, err := jsonpatch.MergeMergePatches(combinedOverride, []byte(serviceAccountPatch))
+				if err != nil {
+					return err
+				}
+				combinedOverride = serviceAccountOverride
 			}
+
+			if overrides != "" {
+				overridesOverride, err := jsonpatch.MergeMergePatches(combinedOverride, []byte(overrides))
+				if err != nil {
+					return err
+				}
+				combinedOverride = overridesOverride
+			}
+
+			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--overrides=%s", string(combinedOverride)))
 
 			for _, e := range podEnv {
 				kubectlArgs = append(kubectlArgs, fmt.Sprintf("--env=%s", e))
@@ -103,7 +122,8 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 		},
 	}
 	cmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
-	cmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", []string{}, "Environment variables to pass to the pod's containers")
+	cmd.PersistentFlags().StringVar(&overrides, "overrides", "", "An inline JSON override for the generated pod object, e.g. '{\"metadata\":{\"name\":\"my-pod\"}}'")
+	cmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", nil, "Environment variables to pass to the pod's containers")
 
 	return cmd
 }
