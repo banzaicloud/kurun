@@ -15,6 +15,7 @@ import (
 
 func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 	var serviceAccount string
+	var overrides string
 	var podEnv []string
 
 	cmd := &cobra.Command{
@@ -91,6 +92,14 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 				combinedOverride = serviceAccountOverride
 			}
 
+			if overrides != "" {
+				overridesOverride, err := jsonpatch.MergeMergePatches(combinedOverride, []byte(overrides))
+				if err != nil {
+					return err
+				}
+				combinedOverride = overridesOverride
+			}
+
 			kubectlArgs = append(kubectlArgs, fmt.Sprintf("--overrides=%s", string(combinedOverride)))
 
 			for _, e := range podEnv {
@@ -114,6 +123,7 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
 	cmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", []string{}, "Environment variables to pass to the pod's containers")
+	cmd.PersistentFlags().StringVar(&overrides, "overrides", "", "An inline JSON override for the generated pod object, e.g. '{\"metadata\":{\"name\":\"my-pod\"}}'")
 
 	return cmd
 }
