@@ -122,8 +122,8 @@ func NewRunCommand(rootParams *rootCommandParams) *cobra.Command {
 		},
 	}
 	cmd.PersistentFlags().StringVar(&serviceAccount, "serviceaccount", "", "Service account to set for the pod")
-	cmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", []string{}, "Environment variables to pass to the pod's containers")
 	cmd.PersistentFlags().StringVar(&overrides, "overrides", "", "An inline JSON override for the generated pod object, e.g. '{\"metadata\":{\"name\":\"my-pod\"}}'")
+	cmd.PersistentFlags().StringArrayVarP(&podEnv, "env", "e", nil, "Environment variables to pass to the pod's containers")
 
 	return cmd
 }
