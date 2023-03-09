@@ -34,7 +34,6 @@ func NewApplyCommand() *cobra.Command {
 			var rawResources [][]byte
 
 			for _, file := range files {
-
 				var manifest io.Reader
 
 				if strings.HasPrefix(file, "http://") || strings.HasPrefix(file, "https://") {
@@ -72,7 +71,7 @@ func NewApplyCommand() *cobra.Command {
 						break
 					}
 
-					var resource interface{}
+					var resource map[string]interface{}
 
 					switch obj.GetKind() {
 					case "Pod":
@@ -93,7 +92,10 @@ func NewApplyCommand() *cobra.Command {
 							}
 						}
 
-						resource = pod
+						resource, err = runtime.DefaultUnstructuredConverter.ToUnstructured(pod)
+						if err != nil {
+							return err
+						}
 
 					case "Deployment":
 						deployment := new(appsv1.Deployment)
@@ -113,9 +115,16 @@ func NewApplyCommand() *cobra.Command {
 							}
 						}
 
-						resource = deployment
+						resource, err = runtime.DefaultUnstructuredConverter.ToUnstructured(deployment)
+						if err != nil {
+							return err
+						}
+
 					default:
-						resource = obj
+						resource, err = runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+						if err != nil {
+							return err
+						}
 					}
 
 					rawResource, err := yaml.Marshal(resource)
@@ -182,12 +191,13 @@ func buildImage(goFiles []string) (string, error) {
 	imageTag := fmt.Sprintf("kurun-%x", hash.Sum(nil))
 	directory := "/tmp/kurun/" + imageTag
 
-	os.MkdirAll(directory, os.ModePerm)
+	err := os.MkdirAll(directory, os.ModePerm)
+	if err != nil {
+		return "", err
+	}
 
 	goBuildArgs := []string{"build", "-o", directory + "/main"}
-	for _, gofile := range goFiles {
-		goBuildArgs = append(goBuildArgs, gofile)
-	}
+	goBuildArgs = append(goBuildArgs, goFiles...)
 	goBuildCommand := exec.Command("go", goBuildArgs...)
 	goBuildCommand.Stderr = os.Stderr
 	goBuildCommand.Stdout = os.Stdout
